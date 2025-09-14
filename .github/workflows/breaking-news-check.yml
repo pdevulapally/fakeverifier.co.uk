@@ -1,0 +1,114 @@
+name: Breaking News Check
+
+on:
+  # Run every 15 minutes
+  schedule:
+    - cron: '*/15 * * * *'
+  
+  # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      test_mode:
+        description: 'Run in test mode'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  check-breaking-news:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build application
+        run: npm run build
+        env:
+          NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
+          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
+          NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+          NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
+          NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
+          NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
+          NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID }}
+          NEXT_PUBLIC_FIREBASE_VAPID_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_VAPID_KEY }}
+          NEXT_PUBLIC_BASE_URL: ${{ secrets.NEXT_PUBLIC_BASE_URL }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
+          CRON_SECRET_TOKEN: ${{ secrets.CRON_SECRET_TOKEN }}
+      
+      - name: Trigger breaking news check
+        run: |
+          if [ "${{ github.event.inputs.test_mode }}" = "true" ]; then
+            echo "Running in test mode..."
+            curl -X POST "${{ secrets.NEXT_PUBLIC_BASE_URL }}/api/check-breaking-news" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer ${{ secrets.CRON_SECRET_TOKEN }}" \
+              -d '{"testMode": true}' \
+              -w "\nHTTP Status: %{http_code}\n"
+          else
+            echo "Running normal breaking news check..."
+            curl -X GET "${{ secrets.NEXT_PUBLIC_BASE_URL }}/api/cron/breaking-news" \
+              -H "Authorization: Bearer ${{ secrets.CRON_SECRET_TOKEN }}" \
+              -w "\nHTTP Status: %{http_code}\n"
+          fi
+      
+      - name: Check response
+        run: |
+          if [ $? -eq 0 ]; then
+            echo "✅ Breaking news check completed successfully"
+          else
+            echo "❌ Breaking news check failed"
+            exit 1
+          fi
+      
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+            
+            const botComment = comments.find(comment => 
+              comment.user.type === 'Bot' && comment.body.includes('Breaking News Check Failed')
+            );
+            
+            const commentBody = `🚨 **Breaking News Check Failed**
+            
+            **Workflow:** ${context.workflow}
+            **Run ID:** ${context.runId}
+            **Time:** ${new Date().toISOString()}
+            **Commit:** ${context.sha}
+            
+            Please check the workflow logs for more details.`;
+            
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: commentBody
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody
+              });
+            }

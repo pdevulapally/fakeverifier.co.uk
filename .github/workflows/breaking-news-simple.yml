@@ -1,0 +1,64 @@
+name: Breaking News Check (Simple)
+
+on:
+  # Run every 15 minutes
+  schedule:
+    - cron: '*/15 * * * *'
+  
+  # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      test_mode:
+        description: 'Run in test mode'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  check-breaking-news:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Trigger breaking news check
+        run: |
+          if [ "${{ github.event.inputs.test_mode }}" = "true" ]; then
+            echo "🧪 Running in test mode..."
+            curl -X POST "${{ secrets.NEXT_PUBLIC_BASE_URL }}/api/check-breaking-news" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer ${{ secrets.CRON_SECRET_TOKEN }}" \
+              -d '{"testMode": true}' \
+              -w "\nHTTP Status: %{http_code}\n" \
+              -v
+          else
+            echo "📰 Running breaking news check..."
+            curl -X GET "${{ secrets.NEXT_PUBLIC_BASE_URL }}/api/cron/breaking-news" \
+              -H "Authorization: Bearer ${{ secrets.CRON_SECRET_TOKEN }}" \
+              -w "\nHTTP Status: %{http_code}\n" \
+              -v
+          fi
+      
+      - name: Check response
+        run: |
+          if [ $? -eq 0 ]; then
+            echo "✅ Breaking news check completed successfully"
+          else
+            echo "❌ Breaking news check failed"
+            exit 1
+          fi
+      
+      - name: Create success summary
+        if: success()
+        run: |
+          echo "## ✅ Breaking News Check Completed" >> $GITHUB_STEP_SUMMARY
+          echo "- **Time:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Mode:** ${{ github.event.inputs.test_mode == 'true' && 'Test' || 'Production' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** Success" >> $GITHUB_STEP_SUMMARY
+      
+      - name: Create failure summary
+        if: failure()
+        run: |
+          echo "## ❌ Breaking News Check Failed" >> $GITHUB_STEP_SUMMARY
+          echo "- **Time:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Mode:** ${{ github.event.inputs.test_mode == 'true' && 'Test' || 'Production' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** Failed" >> $GITHUB_STEP_SUMMARY
+          echo "- **Action Required:** Check application logs and API endpoints" >> $GITHUB_STEP_SUMMARY
