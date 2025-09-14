@@ -9,6 +9,7 @@ import UserProfile from "./user-profile"
 
 const menuItems = [
   { name: "Features", href: "/features" },
+  { name: "Live News", href: "/live-news" },
   { name: "About Us", href: "/about" },
   { name: "Verify News", href: "/verify" },
   { name: "Quick Verify", href: "/ai-analysis" },

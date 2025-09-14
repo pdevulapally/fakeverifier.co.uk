@@ -3,6 +3,7 @@ import { initializeApp } from "firebase/app";
 import { getAnalytics, isSupported } from "firebase/analytics";
 import { getAuth, GoogleAuthProvider, signInWithPopup, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, User } from "firebase/auth";
 import { getFirestore, collection, addDoc, getDocs, getDoc, query, where, orderBy, limit, deleteDoc, doc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { getMessaging, getToken, onMessage, MessagePayload } from "firebase/messaging";
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
 
@@ -32,6 +33,16 @@ if (typeof window !== 'undefined') {
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 const db = getFirestore(app);
+
+// Initialize Firebase Cloud Messaging
+let messaging: any = null;
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  try {
+    messaging = getMessaging(app);
+  } catch (error) {
+    console.warn('Firebase messaging not supported:', error);
+  }
+}
 
 // Authentication functions
 export const signUpWithEmail = async (email: string, password: string) => {
@@ -687,4 +698,189 @@ export const updateUserPlanManually = async (userId: string, plan: "free" | "pro
   }
 }
 
-export { auth, app, analytics, db };
+// Notification functions
+export interface NotificationPreferences {
+  userId: string;
+  breakingNews: boolean;
+  categoryAlerts: string[];
+  frequency: 'immediate' | 'hourly' | 'daily';
+  enabled: boolean;
+  lastUpdated: Date;
+}
+
+// Request notification permission and get FCM token
+export const requestNotificationPermission = async (): Promise<{ success: boolean; token?: string; error?: string }> => {
+  try {
+    if (!messaging) {
+      return { success: false, error: 'Messaging not supported' };
+    }
+
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      return { success: false, error: 'Permission denied' };
+    }
+
+    const token = await getToken(messaging, {
+      vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY
+    });
+
+    if (!token) {
+      return { success: false, error: 'Failed to get token' };
+    }
+
+    return { success: true, token };
+  } catch (error: any) {
+    console.error('Error requesting notification permission:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+// Save FCM token to Firestore
+export const saveFCMToken = async (token: string): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const user = getCurrentUser();
+    if (!user) {
+      return { success: false, error: 'User not authenticated' };
+    }
+
+    const tokenData = {
+      userId: user.uid,
+      token,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      active: true
+    };
+
+    // Check if token already exists
+    const q = query(
+      collection(db, 'fcmTokens'),
+      where('userId', '==', user.uid),
+      where('token', '==', token)
+    );
+    
+    const existingTokens = await getDocs(q);
+    
+    if (existingTokens.empty) {
+      await addDoc(collection(db, 'fcmTokens'), tokenData);
+    } else {
+      // Update existing token
+      const docRef = existingTokens.docs[0].ref;
+      await updateDoc(docRef, {
+        updatedAt: serverTimestamp(),
+        active: true
+      });
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error saving FCM token:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+// Get user's notification preferences
+export const getNotificationPreferences = async (): Promise<{ success: boolean; data?: NotificationPreferences; error?: string }> => {
+  try {
+    const user = getCurrentUser();
+    if (!user) {
+      return { success: false, error: 'User not authenticated' };
+    }
+
+    const q = query(
+      collection(db, 'notificationPreferences'),
+      where('userId', '==', user.uid),
+      limit(1)
+    );
+    
+    const querySnapshot = await getDocs(q);
+    
+    if (querySnapshot.empty) {
+      // Create default preferences
+      const defaultPreferences: NotificationPreferences = {
+        userId: user.uid,
+        breakingNews: true,
+        categoryAlerts: ['politics', 'world', 'technology'],
+        frequency: 'immediate',
+        enabled: true,
+        lastUpdated: new Date()
+      };
+      
+      const docRef = await addDoc(collection(db, 'notificationPreferences'), defaultPreferences);
+      return { success: true, data: defaultPreferences };
+    }
+
+    const doc = querySnapshot.docs[0];
+    const data = doc.data();
+    
+    const preferences: NotificationPreferences = {
+      ...data,
+      lastUpdated: data.lastUpdated?.toDate ? data.lastUpdated.toDate() : new Date(data.lastUpdated)
+    } as NotificationPreferences;
+
+    return { success: true, data: preferences };
+  } catch (error: any) {
+    console.error('Error getting notification preferences:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+// Update notification preferences
+export const updateNotificationPreferences = async (preferences: Partial<NotificationPreferences>): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const user = getCurrentUser();
+    if (!user) {
+      return { success: false, error: 'User not authenticated' };
+    }
+
+    const q = query(
+      collection(db, 'notificationPreferences'),
+      where('userId', '==', user.uid),
+      limit(1)
+    );
+    
+    const querySnapshot = await getDocs(q);
+    
+    if (querySnapshot.empty) {
+      return { success: false, error: 'Preferences not found' };
+    }
+
+    const docRef = querySnapshot.docs[0].ref;
+    await updateDoc(docRef, {
+      ...preferences,
+      lastUpdated: serverTimestamp()
+    });
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error updating notification preferences:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+// Listen for foreground messages
+export const onForegroundMessage = (callback: (payload: MessagePayload) => void) => {
+  if (!messaging) {
+    console.warn('Messaging not available');
+    return () => {};
+  }
+
+  return onMessage(messaging, callback);
+};
+
+// Check if notifications are supported
+export const isNotificationSupported = (): boolean => {
+  return typeof window !== 'undefined' && 
+         'Notification' in window && 
+         'serviceWorker' in navigator && 
+         messaging !== null;
+};
+
+// Get notification permission status
+export const getNotificationPermissionStatus = (): NotificationPermission => {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    return 'denied';
+  }
+  return Notification.permission;
+};
+
+export { auth, app, analytics, db, messaging };

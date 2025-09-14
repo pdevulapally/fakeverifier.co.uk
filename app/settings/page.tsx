@@ -41,6 +41,7 @@ import {
   Zap
 } from "lucide-react"
 import { getCurrentUser, signOutUser, onAuthStateChange, db, getUserTokenUsage, TokenUsage } from "@/lib/firebase"
+import { NotificationSettings } from "@/components/notification-settings"
 import { collection, query, where, getDocs, deleteDoc, doc, orderBy } from "firebase/firestore"
 import { deleteUser } from "firebase/auth"
 import Link from "next/link"
@@ -648,58 +649,7 @@ export default function SettingsPage() {
           </Card>
 
           {/* Notifications */}
-          <Card className="p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <Bell className="w-5 h-5 text-green-600" />
-              <h2 className="text-lg font-semibold">Notifications</h2>
-            </div>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="email-notifications">Email Notifications</Label>
-                  <p className="text-sm text-gray-500">Receive notifications via email</p>
-                </div>
-                <Switch
-                  id="email-notifications"
-                  checked={settings.notifications.email}
-                  onCheckedChange={(checked) => updateSetting('notifications', 'email', checked)}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="push-notifications">Push Notifications</Label>
-                  <p className="text-sm text-gray-500">Receive notifications in browser</p>
-                </div>
-                <Switch
-                  id="push-notifications"
-                  checked={settings.notifications.push}
-                  onCheckedChange={(checked) => updateSetting('notifications', 'push', checked)}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="verification-complete">Verification Complete</Label>
-                  <p className="text-sm text-gray-500">Notify when verification is finished</p>
-                </div>
-                <Switch
-                  id="verification-complete"
-                  checked={settings.notifications.verificationComplete}
-                  onCheckedChange={(checked) => updateSetting('notifications', 'verificationComplete', checked)}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="low-tokens">Low Token Alerts</Label>
-                  <p className="text-sm text-gray-500">Notify when running low on tokens</p>
-                </div>
-                <Switch
-                  id="low-tokens"
-                  checked={settings.notifications.lowTokens}
-                  onCheckedChange={(checked) => updateSetting('notifications', 'lowTokens', checked)}
-                />
-              </div>
-            </div>
-          </Card>
+          <NotificationSettings />
 
           {/* Privacy & Security */}
           <Card className="p-6">
