@@ -52,7 +52,7 @@ To run the project locally, you'll need:
 ```bash
 # Fork the repository on GitHub
 # Then clone your fork
-git clone https://github.com/YOUR_USERNAME/fakeverifier-website.git
+git clone https://github.com/pdevulapally/fakeverifier-website.git
 cd fakeverifier-website
 ```
 
@@ -604,3 +604,4 @@ By contributing to FakeVerifier, you agree that your contributions will be licen
 ---
 
 Thank you for contributing to FakeVerifier! Your efforts help make the internet a more trustworthy place. 🌟
+
