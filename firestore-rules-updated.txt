@@ -1,0 +1,163 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Verification documents - simplified for debugging
+    match /verifications/{docId} {
+      // Allow all operations for authenticated users (temporary for debugging)
+      allow read, write, delete: if request.auth != null;
+    }
+    
+    // Token usage documents - FIXED: Changed userId to uid
+    match /tokenUsage/{docId} {
+      // Create: user must be logged in and creating their own token usage
+      allow create: if request.auth != null &&
+                    request.auth.uid == request.resource.data.uid;
+
+      // Read/Update/Delete: user must be logged in and own this document
+      allow read, update, delete: if request.auth != null &&
+                                  request.auth.uid == resource.data.uid;
+    }
+    
+    // Alternative: More permissive rules for testing (uncomment if needed)
+    // match /tokenUsage/{docId} {
+    //   allow read, write: if request.auth != null;
+    // }
+    
+    // User profile documents
+    match /users/{userId} {
+      // Logged-in user can read/write their own profile
+      allow read, write: if request.auth != null &&
+                         request.auth.uid == userId;
+    }
+
+    // Shared verifications (for sharing feature)
+    match /sharedVerifications/{docId} {
+      // Anyone can read shared verifications
+      allow read: if true;
+      
+      // Only authenticated users can create shared verifications
+      allow create: if request.auth != null;
+    }
+
+    // TEAM FUNCTIONALITY RULES
+    
+    // Teams collection
+    match /teams/{teamId} {
+      // Team owners and admins can read/write team data
+      allow read, write: if request.auth != null && (
+        resource.data.ownerId == request.auth.uid ||
+        isTeamMember(teamId, request.auth.uid)
+      );
+      
+      // Users can create teams (they become the owner)
+      allow create: if request.auth != null &&
+                    request.resource.data.ownerId == request.auth.uid;
+    }
+    
+    // Team members collection
+    match /teamMembers/{memberId} {
+      // Team members can read their own membership and other team members
+      allow read: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        isTeamMember(resource.data.teamId, request.auth.uid)
+      );
+      
+      // Team owners and admins can write (invite, update roles, remove)
+      allow write: if request.auth != null && (
+        isTeamOwner(resource.data.teamId, request.auth.uid) ||
+        isTeamAdmin(resource.data.teamId, request.auth.uid)
+      );
+      
+      // Users can create membership when accepting invitations
+      allow create: if request.auth != null &&
+                    request.resource.data.userId == request.auth.uid;
+    }
+    
+    // Team invitations collection
+    match /teamInvitations/{inviteId} {
+      // Anyone with the invitation token can read it
+      allow read: if request.auth != null;
+      
+      // Team owners and admins can create invitations
+      allow create: if request.auth != null && (
+        isTeamOwner(request.resource.data.teamId, request.auth.uid) ||
+        isTeamAdmin(request.resource.data.teamId, request.auth.uid)
+      );
+      
+      // Invitees can update their invitation status (accept/decline)
+      allow update: if request.auth != null &&
+                    resource.data.email == request.auth.token.email;
+      
+      // Team owners and admins can delete invitations
+      allow delete: if request.auth != null && (
+        isTeamOwner(resource.data.teamId, request.auth.uid) ||
+        isTeamAdmin(resource.data.teamId, request.auth.uid)
+      );
+    }
+    
+    // Team activity logs
+    match /teamActivity/{activityId} {
+      // Team members can read activity logs for their teams
+      allow read: if request.auth != null &&
+                  isTeamMember(resource.data.teamId, request.auth.uid);
+      
+      // System can create activity logs (server-side operations)
+      allow create: if request.auth != null;
+    }
+    
+    // Team usage tracking
+    match /teamUsage/{usageId} {
+      // Team members can read usage data for their teams
+      allow read: if request.auth != null &&
+                  isTeamMember(resource.data.teamId, request.auth.uid);
+      
+      // System can create/update usage data (server-side operations)
+      allow create, update: if request.auth != null;
+    }
+    
+    // Team verifications (verifications done by team members)
+    match /teamVerifications/{verificationId} {
+      // Team members can read verifications for their teams
+      allow read: if request.auth != null &&
+                  isTeamMember(resource.data.teamId, request.auth.uid);
+      
+      // Team members can create verifications for their teams
+      allow create: if request.auth != null &&
+                    isTeamMember(request.resource.data.teamId, request.auth.uid);
+    }
+
+    // HELPER FUNCTIONS
+    
+    // Check if user is a member of a specific team
+    function isTeamMember(teamId, userId) {
+      return exists(/databases/$(database)/documents/teamMembers/$(userId + '_' + teamId)) ||
+             exists(/databases/$(database)/documents/teamMembers/$(teamId + '_' + userId)) ||
+             get(/databases/$(database)/documents/teams/$(teamId)).data.ownerId == userId;
+    }
+    
+    // Check if user is the owner of a specific team
+    function isTeamOwner(teamId, userId) {
+      return get(/databases/$(database)/documents/teams/$(teamId)).data.ownerId == userId;
+    }
+    
+    // Check if user is an admin of a specific team
+    function isTeamAdmin(teamId, userId) {
+      let memberDoc = getMemberDoc(teamId, userId);
+      return memberDoc.data.role == 'admin' || memberDoc.data.role == 'owner';
+    }
+    
+    // Get team member document (helper for role checking)
+    function getMemberDoc(teamId, userId) {
+      // Try different possible document ID formats
+      return exists(/databases/$(database)/documents/teamMembers/$(userId + '_' + teamId)) ?
+             get(/databases/$(database)/documents/teamMembers/$(userId + '_' + teamId)) :
+             get(/databases/$(database)/documents/teamMembers/$(teamId + '_' + userId));
+    }
+
+    // Deny everything else
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
