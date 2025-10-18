@@ -103,10 +103,12 @@ async function callOpenAI({
           { role: "system", content: system },
           { role: "user", content: user },
         ],
-        response_format: {
-          type: "json_schema",
-          json_schema: { name: "schema", schema },
-        },
+        ...(schema ? {
+          response_format: {
+            type: "json_schema",
+            json_schema: { name: "schema", schema },
+          }
+        } : {}),
         max_tokens: maxTokens,
         }),
         signal: controller.signal,
@@ -118,9 +120,20 @@ async function callOpenAI({
 
     const content = data?.choices?.[0]?.message?.content;
     if (!content) throw new Error("Empty response from OpenAI");
-    const parsed = JSON.parse(content);
-
-    return { ...parsed, modelUsed: { vendor: "openai", name: model }, cost: {} };
+    
+    // Handle both JSON and text responses
+    if (schema) {
+      const parsed = JSON.parse(content);
+      return { ...parsed, modelUsed: { vendor: "openai", name: model }, cost: {} };
+    } else {
+      // For conversational responses, return the raw text
+      return { 
+        explanation: content,
+        rawText: content,
+        modelUsed: { vendor: "openai", name: model }, 
+        cost: {} 
+      };
+    }
     } catch (e: any) {
     console.error("OpenAI API failed:", e);
     return {

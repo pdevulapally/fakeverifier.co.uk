@@ -20,12 +20,15 @@ import {
   ChevronUp,
   Crown,
   Flag,
-  AlertTriangle
+  AlertTriangle,
+  X
 } from 'lucide-react';
 import { AI_Prompt } from '@/components/ui/animated-ai-input';
 import { TimelineFeed, type TimelineEvent } from '@/components/TimelineFeed';
 import ClassicLoader from '@/components/ui/classic-loader';
 import { TextShimmer } from '@/components/ui/text-shimmer';
+import { MemoryManager } from '@/components/MemoryManager';
+import { MemoryNotification } from '@/components/MemoryNotification';
 import { useAuth } from '@/contexts/AuthContext';
 function TokenCounters({ uid }: { uid?: string | null }) {
   const [data, setData] = useState<{ daily: number; monthly: number; plan: string } | null>(null);
@@ -157,7 +160,7 @@ function VerifyPage() {
   const [error, setError] = useState<string | null>(null);
   const [isSearchActive, setIsSearchActive] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [userPlan, setUserPlan] = useState('free');
   const [dynamicReasons, setDynamicReasons] = useState<string[]>([]);
@@ -175,6 +178,81 @@ function VerifyPage() {
   const router = useRouter();
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [conversationToDelete, setConversationToDelete] = useState<{ id: string; title: string } | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingContent, setEditingContent] = useState<string>('');
+  const [showMemorySidebar, setShowMemorySidebar] = useState(false);
+  const [memories, setMemories] = useState<any[]>([]);
+  const [copySuccess, setCopySuccess] = useState(false);
+  const [memoryNotifications, setMemoryNotifications] = useState<any[]>([]);
+  const [showMemoryNotification, setShowMemoryNotification] = useState(false);
+
+  // Handle sidebar state based on screen size
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 1024) { // lg breakpoint
+        setSidebarOpen(true);
+      } else {
+        setSidebarOpen(false);
+      }
+    };
+
+    // Set initial state
+    handleResize();
+
+    // Listen for resize events
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Load memories
+  useEffect(() => {
+    if (!user?.uid) return;
+    loadMemories();
+  }, [user?.uid]);
+
+  const loadMemories = async () => {
+    if (!user?.uid) return;
+    try {
+      const response = await fetch(`/api/memories?uid=${user.uid}`);
+      const data = await response.json();
+      if (response.ok) {
+        setMemories(data.memories || []);
+      }
+    } catch (error) {
+      console.error('Failed to load memories:', error);
+    }
+  };
+
+  const processAutoMemories = async (userMessage: string, aiResponse: string) => {
+    if (!user?.uid) return;
+    
+    try {
+      const response = await fetch('/api/memories/auto', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: user.uid,
+          conversation: messages.map(m => `${m.role}: ${m.content}`).join('\n'),
+          userMessage,
+          aiResponse
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.createdMemories.length > 0 || data.updatedMemories.length > 0) {
+          // Show notification
+          setMemoryNotifications([...data.createdMemories, ...data.updatedMemories]);
+          setShowMemoryNotification(true);
+          
+          // Reload memories
+          await loadMemories();
+        }
+      }
+    } catch (error) {
+      console.error('Failed to process auto memories:', error);
+    }
+  };
 
   // Minimal markdown renderer for assistant messages (links, bold, lists, newlines)
   function mdToHtml(md: string): string {
@@ -463,12 +541,21 @@ function VerifyPage() {
         } catch {}
       };
 
+      // Prepare memories context
+      const memoriesContext = memories.length > 0 
+        ? `\n\nRelevant memories about this user:\n${memories.map(m => `- ${m.content}`).join('\n')}`
+        : '';
+
       const r = await fetch('/api/verify', { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify({
           uid: user?.uid || 'demo',
-          input: { type: inputText.startsWith('http') ? 'url' : 'text', raw: inputText, context: recent },
+          input: { 
+            type: inputText.startsWith('http') ? 'url' : 'text', 
+            raw: inputText, 
+            context: recent + memoriesContext 
+          },
           nocache: true,
           model: model || 'GPT-4-1 Mini',
           imageBase64Array: imageBase64Array
@@ -484,6 +571,9 @@ function VerifyPage() {
           timestamp: new Date()
         };
         setMessages(prev => [...prev, assistantMessage]);
+        
+        // Process auto-memories after AI response
+        await processAutoMemories(inputText, assistantMessage.content);
         
         // Save assistant message to conversation
         if (targetConversationId && user) {
@@ -584,6 +674,9 @@ function VerifyPage() {
   async function onCopy(text: string) {
     try {
       await navigator.clipboard.writeText(text);
+      setCopySuccess(true);
+      // Reset the success state after 2 seconds
+      setTimeout(() => setCopySuccess(false), 2000);
     } catch (e) {
       // Silent fail for copy
     }
@@ -616,7 +709,9 @@ function VerifyPage() {
   async function copyShareLink() {
     try {
       await navigator.clipboard.writeText(shareLink);
-      // You could add a toast notification here
+      setCopySuccess(true);
+      // Reset the success state after 2 seconds
+      setTimeout(() => setCopySuccess(false), 2000);
     } catch (e) {
       // Silent fail for copy errors
     }
@@ -675,6 +770,51 @@ function VerifyPage() {
     const lastUser = [...messages].reverse().find(m => m.role === 'user');
     if (!lastUser) return;
     await onVerify(lastUser.content);
+  }
+
+  // Edit message functions
+  function startEditing(messageId: string, content: string) {
+    setEditingMessageId(messageId);
+    setEditingContent(content);
+  }
+
+  function cancelMessageEditing() {
+    setEditingMessageId(null);
+    setEditingContent('');
+  }
+
+  async function saveEdit() {
+    if (!editingMessageId || !editingContent.trim()) return;
+    
+    // Update the message in the local state
+    setMessages(prev => prev.map(m => 
+      m.id === editingMessageId 
+        ? { ...m, content: editingContent.trim() }
+        : m
+    ));
+
+    // Update in the database if we have a conversation
+    if (currentConversationId && user) {
+      try {
+        await fetch(`/api/conversations/${currentConversationId}/messages`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            uid: user.uid,
+            messageId: editingMessageId,
+            content: editingContent.trim()
+          })
+        });
+      } catch (error) {
+        console.error('Failed to update message:', error);
+      }
+    }
+
+    // Regenerate response with the edited content
+    await onVerify(editingContent.trim());
+    
+    // Clear editing state
+    cancelMessageEditing();
   }
 
   // Filter conversations based on search query
@@ -743,6 +883,7 @@ function VerifyPage() {
           />
         )}
         
+
         {/* Mobile Sidebar */}
         <div className={`fixed left-0 top-0 h-full w-80 bg-gray-50 z-50 transform transition-transform duration-300 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
@@ -833,7 +974,7 @@ function VerifyPage() {
                   <div className="min-w-0 flex-1">
                     <p className={`truncate text-sm ${currentConversationId === conv.id ? 'font-medium text-[color:var(--primary)]' : 'text-[color:var(--foreground)]'}`}>{conv.title}</p>
                 </div>
-                  <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                  <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                     <button 
                       onClick={(e) => {
                         e.stopPropagation();
@@ -860,6 +1001,14 @@ function VerifyPage() {
           
             {/* Footer */}
           <div className="mt-auto pt-4">
+            <button 
+              onClick={() => setShowMemorySidebar(!showMemorySidebar)}
+              className="mb-3 flex w-full items-center gap-3 rounded-full p-2 bg-white border border-gray-200 hover:bg-gray-50">
+              <div className="grid h-8 w-8 place-items-center rounded-full bg-gray-100">
+                <User className="h-4 w-4 text-gray-800" />
+              </div>
+              <span className="text-sm text-gray-800">Memories</span>
+            </button>
             <button 
               onClick={() => { router.push('/settings'); }}
               className="mb-3 flex w-full items-center gap-3 rounded-full p-2 bg-white border border-gray-200 hover:bg-gray-50">
@@ -1203,7 +1352,7 @@ function VerifyPage() {
                       <p className={`truncate text-sm ${currentConversationId === conv.id ? 'font-medium text-[color:var(--primary)]' : 'text-[color:var(--foreground)]'}`}>{conv.title}</p>
                     )}
                   </div>
-                  <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                  <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                     <button 
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1231,6 +1380,14 @@ function VerifyPage() {
           
             {/* Footer */}
           <div className="mt-auto pt-4 relative">
+            <button 
+              onClick={() => setShowMemorySidebar(!showMemorySidebar)}
+              className="mb-3 flex w-full items-center gap-3 rounded-full p-2 bg-white border border-gray-200 hover:bg-gray-50">
+              <div className="grid h-8 w-8 place-items-center rounded-full bg-gray-100">
+                <User className="h-4 w-4 text-gray-800" />
+              </div>
+              <span className="text-sm text-gray-800">Memories</span>
+            </button>
             <button 
               onClick={() => { router.push('/settings'); }}
               className="mb-3 flex w-full items-center gap-3 rounded-full p-2 bg-white border border-gray-200 hover:bg-gray-50">
@@ -1404,10 +1561,6 @@ function VerifyPage() {
                           </div>
                           <div className="prose prose-sm max-w-none text-gray-900">
                             <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: mdToHtml(m.content) }} />
-                            {/* Legacy explanation fallback with linkification if messageMarkdown missing */}
-                            {!m.content.includes('**Verdict:**') && (
-                              <div className="mt-3 text-sm" dangerouslySetInnerHTML={{ __html: mdToHtml(m.content.replace(/\[(\d+)\]/g, (_m, n) => `[${n}](#citation-${n})`)) }} />
-                            )}
                     </div>
                           {/* actions row */}
                           <div className="mt-4 flex items-center gap-1">
@@ -1491,7 +1644,63 @@ function VerifyPage() {
                             </div>
                           )}
                     </div>
-                       ) : null}
+                       ) : (
+                        // User message
+                        <div className="group relative">
+                          <div className="rounded-2xl bg-gray-100 p-4 shadow-sm">
+                            {editingMessageId === m.id ? (
+                              // Edit mode
+                              <div className="space-y-3">
+                                <textarea
+                                  value={editingContent}
+                                  onChange={(e) => setEditingContent(e.target.value)}
+                                  className="w-full rounded-lg border border-gray-300 p-3 text-sm focus:border-blue-500 focus:outline-none"
+                                  rows={3}
+                                  placeholder="Edit your message..."
+                                />
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={saveEdit}
+                                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                                  >
+                                    Save & Regenerate
+                                  </button>
+                                  <button
+                                    onClick={cancelMessageEditing}
+                                    className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              // Display mode
+                              <div className="relative">
+                                <div className="text-sm text-gray-900">{m.content}</div>
+                                {/* Hover actions */}
+                                <div className="absolute -bottom-2 -right-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                                  <div className="flex items-center gap-1 rounded-lg bg-white border border-gray-200 p-1 shadow-lg">
+                                    <button
+                                      onClick={() => startEditing(m.id, m.content)}
+                                      className="rounded p-1.5 hover:bg-gray-100"
+                                      title="Edit message"
+                                    >
+                                      <Edit className="h-3.5 w-3.5 text-gray-600" />
+                                    </button>
+                                    <button
+                                      onClick={() => onCopy(m.content)}
+                                      className="rounded p-1.5 hover:bg-gray-100"
+                                      title="Copy message"
+                                    >
+                                      <Copy className="h-3.5 w-3.5 text-gray-600" />
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                       )}
                   </div>
                 </div>
                 ))
@@ -1531,6 +1740,8 @@ function VerifyPage() {
           {error && (
                 <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">{error}</div>
               )}
+              
+
               <div className="flex justify-center">
                 <div className="w-full max-w-3xl border-t border-gray-200 pt-5">
                   <AI_Prompt 
@@ -1574,10 +1785,20 @@ function VerifyPage() {
               </button>
               <button
                 onClick={copyShareLink}
-                className="rounded-lg px-3 py-2 text-sm font-medium"
-                style={{ background: 'var(--primary)', color: 'var(--primary-foreground)' }}
+                className="rounded-lg px-3 py-2 text-sm font-medium flex items-center gap-2"
+                style={{ background: copySuccess ? '#10b981' : 'var(--primary)', color: 'var(--primary-foreground)' }}
               >
-                Copy Link
+                {copySuccess ? (
+                  <>
+                    <CheckCircle2 className="h-4 w-4" />
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-4 w-4" />
+                    Copy Link
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -1653,6 +1874,45 @@ function VerifyPage() {
               >
                 {reportSubmitting ? 'Submitting...' : 'Submit Report'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Copy Success Toast */}
+      {copySuccess && (
+        <div className="fixed top-4 right-4 z-50 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4" />
+          <span className="text-sm font-medium">Copied to clipboard!</span>
+        </div>
+      )}
+
+      {/* Memory Notification */}
+      {showMemoryNotification && memoryNotifications.length > 0 && (
+        <MemoryNotification
+          memories={memoryNotifications}
+          onClose={() => {
+            setShowMemoryNotification(false);
+            setMemoryNotifications([]);
+          }}
+        />
+      )}
+
+      {/* Memory Modal */}
+      {showMemorySidebar && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-2 sm:p-4">
+          <div className="bg-white rounded-lg w-full max-w-4xl h-[90vh] sm:h-[80vh] flex flex-col mx-2 sm:mx-0">
+            <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200">
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Memories</h2>
+              <button 
+                onClick={() => setShowMemorySidebar(false)}
+                className="rounded-lg p-2 hover:bg-gray-100"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+              <MemoryManager uid={user?.uid || null} />
             </div>
           </div>
         </div>

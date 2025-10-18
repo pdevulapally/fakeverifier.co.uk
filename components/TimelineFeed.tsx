@@ -15,25 +15,9 @@ export function TimelineFeed({ events }: { events: TimelineEvent[] }) {
   const [lottieData, setLottieData] = useState(null);
 
   useEffect(() => {
-    // Load Lottie animation data
-    fetch('/Images/search imm.lottie')
-      .then(response => {
-        if (!response.ok) {
-          throw new Error('Failed to fetch Lottie file');
-        }
-        return response.text();
-      })
-      .then(text => {
-        try {
-          const data = JSON.parse(text);
-          setLottieData(data);
-        } catch (parseError) {
-          console.error('Failed to parse Lottie JSON:', parseError);
-          // If it's not JSON, it might be a different format
-          console.log('Lottie file content preview:', text.substring(0, 100));
-        }
-      })
-      .catch(error => console.error('Failed to load Lottie animation:', error));
+    // Skip loading Lottie animation for now due to corrupted file
+    // TODO: Replace with proper Lottie JSON file
+    console.log('Lottie animation disabled - file is corrupted (ZIP format)');
   }, []);
 
   return (

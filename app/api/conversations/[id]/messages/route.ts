@@ -112,3 +112,47 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'Failed to add message' }, { status: 500 });
   }
 }
+
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params;
+    const conversationId = id;
+    const { uid, messageId, content } = await req.json();
+    
+    if (!uid || !messageId || !content) {
+      return NextResponse.json({ error: 'User ID, message ID, and content required' }, { status: 400 });
+    }
+
+    // Check if db is properly initialized
+    if (!db) {
+      console.error('Firebase Admin database not initialized');
+      return NextResponse.json({ error: 'Database not initialized' }, { status: 500 });
+    }
+
+    // Verify ownership using Admin SDK
+    const conversationRef = db.collection('chatHistory').doc(conversationId);
+    const conversation = await conversationRef.get();
+    
+    if (!conversation.exists || conversation.data()?.uid !== uid) {
+      return NextResponse.json({ error: 'Conversation not found or access denied' }, { status: 404 });
+    }
+
+    // Update the specific message
+    const currentMessages = conversation.data()?.messages || [];
+    const updatedMessages = currentMessages.map((msg: any) => 
+      msg.id === messageId 
+        ? { ...msg, content: content.trim() }
+        : msg
+    );
+
+    await conversationRef.update({
+      messages: updatedMessages,
+      updatedAt: new Date()
+    });
+    
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error updating message:', error);
+    return NextResponse.json({ error: 'Failed to update message' }, { status: 500 });
+  }
+}

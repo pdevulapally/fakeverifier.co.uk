@@ -139,6 +139,12 @@ function formatFactCheckMarkdown({
   evidenceSnippets,
   followUps,
 }: any): string {
+  // Handle conversational responses - return just the explanation without any formatting
+  if (verdict === 'Conversational') {
+    return explanation || 'Hello! I\'m FakeVerifier, your friendly AI assistant. I can help with general questions and also specialize in fact-checking when you need to verify claims or articles. What would you like to chat about?';
+  }
+
+  // Handle fact-checking responses
   const confLabel = confidenceLabel(confidence ?? 0);
   const verdictEmoji =
     verdict?.toLowerCase() === 'true' || verdict?.toLowerCase() === 'real' || verdict?.toLowerCase() === 'likely real'
@@ -151,34 +157,34 @@ function formatFactCheckMarkdown({
 
   const evidenceSection =
     evidenceSnippets?.length
-      ? ` 🔍 Evidence\n${evidenceSnippets
+      ? ` 🔍 Key Evidence I Found\n${evidenceSnippets
           .map(
             (e: any) =>
-              `- **${e.title || 'Source'}:** “${e.quote}”  \n  [Read more](${e.url})`
+              `- **${e.title || 'Source'}:** "${e.quote}"  \n  [Read more](${e.url})`
           )
           .join('\n')}\n`
       : '';
 
   const sourcesSection =
     sources?.length
-      ? ` 🧾 Sources\n${sources
+      ? ` 📚 Sources I Checked\n${sources
           .map(
             (s: any, i: number) =>
               `${i + 1}. [${s.title || new URL(s.url).hostname.replace(/^www\./, '')}](${s.url})`
           )
           .join('\n')}\n`
-      : ' 🧾 Sources\n_No external sources found._\n';
+      : ' 📚 Sources I Checked\n_I wasn\'t able to find reliable sources to verify this information._\n';
 
   const followupSection =
     followUps?.length
-      ? ` ❓ You may also ask\n${followUps.map((q: string) => `- ${q}`).join('\n')}\n`
+      ? ` 💭 You might also want to ask\n${followUps.map((q: string) => `- ${q}`).join('\n')}\n`
       : '';
 
-  return `${verdictEmoji} **Verdict:** ${verdict || 'Unknown'}  
-**Confidence:** ${confLabel} (${confidence ?? '—'}%)
+  return `${verdictEmoji} **My Assessment:** ${verdict || 'Unknown'}  
+**Confidence Level:** ${confLabel} (${confidence ?? '—'}%)
 
- 📰 Summary
-${explanation || 'No explanation provided.'}
+ 💬 What I Found
+${explanation || 'I wasn\'t able to find enough information to provide a clear assessment.'}
 
 ${evidenceSection}${sourcesSection}${followupSection}`.trim();
 }
@@ -226,15 +232,85 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Enforce per-plan image attachment limits
+    // Check if this is a general conversation vs fact-checking request
+    const isGeneralConversation = (text: string) => {
+      const greetings = ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening', 'how are you', 'what\'s up', 'how\'s it going'];
+      const generalQuestions = ['what can you do', 'help me', 'tell me about', 'explain', 'how does', 'what is', 'who is', 'when is', 'where is', 'why is'];
+      
+      const lowerText = text.toLowerCase().trim();
+      
+      // Check for greetings
+      if (greetings.some(greeting => lowerText.includes(greeting))) {
+        return true;
+      }
+      
+      // Check for general questions (not fact-checking specific)
+      if (generalQuestions.some(question => lowerText.includes(question)) && 
+          !lowerText.includes('verify') && 
+          !lowerText.includes('check') && 
+          !lowerText.includes('fact') && 
+          !lowerText.includes('true') && 
+          !lowerText.includes('false') &&
+          !lowerText.includes('real') &&
+          !lowerText.includes('fake')) {
+        return true;
+      }
+      
+      return false;
+    };
+
+    const isConversational = isGeneralConversation(input.raw);
+
+    // Get user plan first
     let plan: 'free' | 'pro' | 'enterprise' = 'free';
     try {
       if (uid && db) {
         const snap = await db.collection('tokenUsage').doc(uid).get();
         const u = snap.data() as any;
-        plan = (u?.plan || 'free') as typeof plan;
+        plan = (u?.plan || 'free') as 'free' | 'pro' | 'enterprise';
       }
-    } catch {}
+    } catch (error) {
+      console.error('Error fetching user plan:', error);
+      plan = 'free';
+    }
+
+    // Handle conversational responses
+    if (isConversational) {
+      // For conversational requests, use a simpler approach
+      const conversationalResponse = await callLLM({
+        system: `You are FakeVerifier, a friendly and conversational AI assistant. You're like ChatGPT - you can chat about anything, help with general questions, and also specialize in fact-checking when needed.
+
+Be warm, friendly, and engaging. Respond naturally to greetings and general questions. If someone asks about fact-checking capabilities, explain that you can help verify claims, headlines, articles, and social media posts.
+
+Keep responses conversational and helpful. Don't use formal fact-checking format unless specifically asked to verify something.`,
+        user: input.raw,
+        schema: null,
+        tier: plan,
+        model: model || 'gpt-4o'
+      });
+
+      const conversationalText = conversationalResponse.explanation || conversationalResponse.rawText || 'Hello! I\'m FakeVerifier, your friendly AI assistant. I can help with general questions and also specialize in fact-checking when you need to verify claims or articles. What would you like to chat about?';
+      
+      return new Response(
+        JSON.stringify({
+          verdict: 'Conversational',
+          confidence: 100,
+          explanation: conversationalText,
+          messageMarkdown: conversationalText, // This will be used by the frontend instead of the verdict format
+          sources: [],
+          evidenceSnippets: [],
+          followUps: [], // Empty follow-ups for conversational responses to avoid duplication
+          modelUsed: conversationalResponse.modelUsed,
+          cost: conversationalResponse.cost || {}
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    // Enforce per-plan image attachment limits
 
     const maxImagesByPlan: Record<'free' | 'pro' | 'enterprise', number> = {
       free: 1,
