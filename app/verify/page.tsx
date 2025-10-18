@@ -280,7 +280,10 @@ function VerifyPage() {
     setPublicLink(link);
     
     // Update conversation privacy in database
-    await updateConversationPrivacy(true);
+    await updateConversationPrivacy(true, 'public');
+    
+    // Reload conversation privacy to ensure UI is updated
+    await loadConversationPrivacy();
   };
 
   const updateConversationPrivacy = async (makePublic: boolean, privacyLevel: 'private' | 'link' | 'public' = 'private') => {
@@ -312,6 +315,33 @@ function VerifyPage() {
       }
     } catch (error) {
       console.error('Failed to load access logs:', error);
+    }
+  };
+
+  const loadConversationPrivacy = async () => {
+    if (!currentConversationId || !user?.uid) return;
+    
+    try {
+      const response = await fetch(`/api/conversations/${currentConversationId}?uid=${user.uid}`);
+      const data = await response.json();
+      if (response.ok && data) {
+        const conv = data;
+        setIsPublic(conv.isPublic || false);
+        setPrivacyLevel(conv.privacyLevel || 'private');
+        
+        // Set public link if conversation is public or link-only
+        if (conv.isPublic) {
+          if (conv.privacyLevel === 'public') {
+            setPublicLink(`${window.location.origin}/public-reports/${currentConversationId}`);
+          } else if (conv.privacyLevel === 'link') {
+            setPublicLink(`${window.location.origin}/shared/${currentConversationId}`);
+          }
+        } else {
+          setPublicLink(null);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load conversation privacy:', error);
     }
   };
 
@@ -360,6 +390,9 @@ function VerifyPage() {
       await loadAccessLogs();
     }
     
+    // Reload conversation privacy to ensure UI is updated
+    await loadConversationPrivacy();
+    
     // Close the privacy modal after selection
     setShowPrivacyModal(false);
   };
@@ -403,6 +436,13 @@ function VerifyPage() {
       loadUserPlan();
     }
   }, [user]);
+
+  // Load conversation privacy when conversation changes
+  useEffect(() => {
+    if (currentConversationId && user) {
+      loadConversationPrivacy();
+    }
+  }, [currentConversationId, user]);
 
   // Handle deep-linking to a conversation via ?c=CONVERSATION_ID
   useEffect(() => {

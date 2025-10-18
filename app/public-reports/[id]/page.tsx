@@ -16,8 +16,15 @@ interface PublicReport {
   dislikes: number;
   tags: string[];
   sources: Array<{ name: string; url: string }>;
+  evidence: string[];
+  explanation: string;
   createdAt: string;
   updatedAt: string;
+  messages?: Array<{
+    role: 'user' | 'assistant';
+    content: string;
+    timestamp: string;
+  }>;
 }
 
 export default function PublicReportPage() {
@@ -287,10 +294,70 @@ export default function PublicReportPage() {
 
           {/* Report Content */}
           <div className="p-6">
-            <div className="prose prose-lg max-w-none">
-              <div dangerouslySetInnerHTML={{ __html: report.content.replace(/\n/g, '<br>') }} />
-            </div>
+            {report.messages && report.messages.length > 0 ? (
+              <div className="space-y-4">
+                {report.messages.map((message: any, index: number) => (
+                  <div key={index} className={`flex w-full justify-center`}>
+                    <div className="w-full max-w-3xl">
+                      {message.role === 'assistant' ? (
+                        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-800">
+                            <img src="/Images/Fakeverifier-official-logo.png" alt="FakeVerifier Official Logo" className="h-6 w-auto" />
+                            <CheckCircle2 className="h-4 w-4 text-purple-600" />
+                            FakeVerifier
+                          </div>
+                          <div className="prose prose-sm max-w-none text-gray-900">
+                            <div dangerouslySetInnerHTML={{ __html: message.content.replace(/\n/g, '<br>') }} />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-800">
+                            <div className="w-6 h-6 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                              U
+                            </div>
+                            User
+                          </div>
+                          <div className="prose prose-sm max-w-none text-gray-900">
+                            {message.content}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="prose prose-lg max-w-none">
+                <div dangerouslySetInnerHTML={{ __html: report.content.replace(/\n/g, '<br>') }} />
+              </div>
+            )}
           </div>
+
+          {/* Evidence */}
+          {report.evidence && report.evidence.length > 0 && (
+            <div className="p-6 border-t border-gray-200 bg-blue-50">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Evidence</h3>
+              <div className="space-y-3">
+                {report.evidence.map((evidence, index) => (
+                  <div key={index} className="flex items-start gap-3">
+                    <div className="w-2 h-2 bg-blue-600 rounded-full flex-shrink-0 mt-2"></div>
+                    <p className="text-sm text-gray-700">{evidence}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Explanation */}
+          {report.explanation && (
+            <div className="p-6 border-t border-gray-200 bg-green-50">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Analysis</h3>
+              <div className="prose prose-sm max-w-none text-gray-700">
+                <p>{report.explanation}</p>
+              </div>
+            </div>
+          )}
 
           {/* Sources */}
           {report.sources && report.sources.length > 0 && (
