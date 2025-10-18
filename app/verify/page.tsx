@@ -21,7 +21,9 @@ import {
   Crown,
   Flag,
   AlertTriangle,
-  X
+  X,
+  Lock,
+  Globe
 } from 'lucide-react';
 import { AI_Prompt } from '@/components/ui/animated-ai-input';
 import { TimelineFeed, type TimelineEvent } from '@/components/TimelineFeed';
@@ -185,6 +187,13 @@ function VerifyPage() {
   const [copySuccess, setCopySuccess] = useState(false);
   const [memoryNotifications, setMemoryNotifications] = useState<any[]>([]);
   const [showMemoryNotification, setShowMemoryNotification] = useState(false);
+  const [isPublic, setIsPublic] = useState(false);
+  const [showPrivacyWarning, setShowPrivacyWarning] = useState(false);
+  const [publicLink, setPublicLink] = useState<string | null>(null);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+  const [privacyLevel, setPrivacyLevel] = useState<'private' | 'link' | 'public'>('private');
+  const [accessLogs, setAccessLogs] = useState<any[]>([]);
+  const [showAccessManagement, setShowAccessManagement] = useState(false);
 
   // Handle sidebar state based on screen size
   useEffect(() => {
@@ -252,6 +261,107 @@ function VerifyPage() {
     } catch (error) {
       console.error('Failed to process auto memories:', error);
     }
+  };
+
+  const handlePrivacyToggle = async () => {
+    setShowPrivacyModal(true);
+    // Load access logs if conversation is public
+    if (isPublic) {
+      await loadAccessLogs();
+    }
+  };
+
+  const confirmMakePublic = async () => {
+    setShowPrivacyWarning(false);
+    setIsPublic(true);
+    
+    // Generate public link
+    const link = `${window.location.origin}/public-reports/${currentConversationId}`;
+    setPublicLink(link);
+    
+    // Update conversation privacy in database
+    await updateConversationPrivacy(true);
+  };
+
+  const updateConversationPrivacy = async (makePublic: boolean, privacyLevel: 'private' | 'link' | 'public' = 'private') => {
+    if (!currentConversationId || !user?.uid) return;
+    
+    try {
+      await fetch(`/api/conversations/${currentConversationId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: user.uid,
+          isPublic: makePublic,
+          privacyLevel: privacyLevel
+        })
+      });
+    } catch (error) {
+      console.error('Failed to update conversation privacy:', error);
+    }
+  };
+
+  const loadAccessLogs = async () => {
+    if (!currentConversationId || !user?.uid) return;
+    
+    try {
+      const response = await fetch(`/api/conversations/${currentConversationId}/access-logs?uid=${user.uid}`);
+      const data = await response.json();
+      if (response.ok) {
+        setAccessLogs(data.accessLogs || []);
+      }
+    } catch (error) {
+      console.error('Failed to load access logs:', error);
+    }
+  };
+
+  const removeAccess = async (logId: string) => {
+    if (!currentConversationId || !user?.uid) return;
+    
+    try {
+      const response = await fetch(`/api/conversations/${currentConversationId}/access-logs/${logId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: user.uid })
+      });
+
+      if (response.ok) {
+        // Remove from local state
+        setAccessLogs(prev => prev.filter(log => log.id !== logId));
+      } else {
+        console.error('Failed to remove access');
+      }
+    } catch (error) {
+      console.error('Error removing access:', error);
+    }
+  };
+
+  const handlePrivacyChange = async (level: 'private' | 'link' | 'public') => {
+    setPrivacyLevel(level);
+    
+    if (level === 'private') {
+      setIsPublic(false);
+      setPublicLink(null);
+      await updateConversationPrivacy(false, 'private');
+    } else if (level === 'link') {
+      setIsPublic(true);
+      const link = `${window.location.origin}/shared/${currentConversationId}`;
+      setPublicLink(link);
+      await updateConversationPrivacy(true, 'link');
+    } else if (level === 'public') {
+      setIsPublic(true);
+      const link = `${window.location.origin}/public-reports/${currentConversationId}`;
+      setPublicLink(link);
+      await updateConversationPrivacy(true, 'public');
+    }
+    
+    // Load access logs when making public
+    if (level !== 'private') {
+      await loadAccessLogs();
+    }
+    
+    // Close the privacy modal after selection
+    setShowPrivacyModal(false);
   };
 
   // Minimal markdown renderer for assistant messages (links, bold, lists, newlines)
@@ -708,7 +818,8 @@ function VerifyPage() {
   // Copy share link to clipboard
   async function copyShareLink() {
     try {
-      await navigator.clipboard.writeText(shareLink);
+      const linkToCopy = publicLink || shareLink;
+      await navigator.clipboard.writeText(linkToCopy);
       setCopySuccess(true);
       // Reset the success state after 2 seconds
       setTimeout(() => setCopySuccess(false), 2000);
@@ -1764,17 +1875,138 @@ function VerifyPage() {
             <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--foreground)' }}>
               Share Conversation
             </h3>
-            <p className="text-sm mb-4" style={{ color: 'var(--muted-foreground)' }}>
-              Share this conversation with friends and family:
-            </p>
-            <div className="mb-4">
-              <input 
-                type="text" 
-                value={shareLink}
-                readOnly
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-gray-50"
-              />
+            
+            {/* People with access section */}
+            <div className="mb-6">
+              <h4 className="text-sm font-medium text-gray-900 mb-3">People with access</h4>
+              
+              {/* Owner */}
+              <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg mb-2">
+                <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                  {user?.email?.charAt(0).toUpperCase() || 'U'}
+                </div>
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-gray-900">
+                    {user?.email?.split('@')[0] || 'User'} (you)
+                  </div>
+                  <div className="text-xs text-gray-500">{user?.email}</div>
+                </div>
+                <button className="text-xs px-2 py-1 bg-gray-200 text-gray-700 rounded flex items-center gap-1">
+                  Owner <ChevronUp className="h-3 w-3" />
+                </button>
+              </div>
+
+              {/* Access Logs */}
+              {accessLogs.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs text-gray-500 font-medium">Recent access:</div>
+                    <button
+                      onClick={() => setShowAccessManagement(true)}
+                      className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                    >
+                      Manage Access
+                    </button>
+                  </div>
+                  {accessLogs.slice(0, 3).map((log, index) => (
+                    <div key={index} className="flex items-center gap-3 p-2 bg-blue-50 rounded-lg">
+                      <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs">
+                        {log.userAgent?.charAt(0).toUpperCase() || 'A'}
+                      </div>
+                      <div className="flex-1">
+                        <div className="text-xs font-medium text-gray-900">
+                          {log.ipAddress || 'Anonymous'} • {log.location || 'Unknown location'}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {new Date(log.accessedAt).toLocaleString()}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => removeAccess(log.id)}
+                        className="text-xs text-red-600 hover:text-red-700 p-1 rounded hover:bg-red-50"
+                        title="Remove access"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                  {accessLogs.length > 3 && (
+                    <div className="text-xs text-gray-500 text-center">
+                      +{accessLogs.length - 3} more accesses
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
+
+            {/* Visibility section */}
+            <div className="mb-6">
+              <h4 className="text-sm font-medium text-gray-900 mb-3">Visibility</h4>
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={handlePrivacyToggle}
+                  className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  {privacyLevel === 'private' ? (
+                    <>
+                      <Lock className="h-4 w-4 text-gray-500" />
+                      <span className="text-sm font-medium text-gray-900">Private</span>
+                    </>
+                  ) : privacyLevel === 'link' ? (
+                    <>
+                      <Share className="h-4 w-4 text-blue-600" />
+                      <span className="text-sm font-medium text-gray-900">Anyone with link</span>
+                    </>
+                  ) : (
+                    <>
+                      <Globe className="h-4 w-4 text-green-600" />
+                      <span className="text-sm font-medium text-gray-900">Public</span>
+                    </>
+                  )}
+                  <ChevronUp className="h-3 w-3 text-gray-500" />
+                </button>
+                
+                <button
+                  onClick={copyShareLink}
+                  disabled={!isPublic || !publicLink}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
+                    isPublic && publicLink
+                      ? 'bg-blue-600 text-white hover:bg-blue-700'
+                      : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  }`}
+                >
+                  <Copy className="h-4 w-4" />
+                  <span className="text-sm font-medium">
+                    {copySuccess ? 'Copied!' : 'Copy Link'}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Link display when public */}
+            {isPublic && publicLink && (
+              <div className="mb-4">
+                <input 
+                  type="text" 
+                  value={publicLink}
+                  readOnly
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-gray-50"
+                />
+              </div>
+            )}
+
+            {/* Info link */}
+            <div className="mb-4">
+              <a 
+                href="#" 
+                className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                onClick={(e) => e.preventDefault()}
+              >
+                <span className="text-xs">ⓘ</span>
+                How does sharing chats work?
+              </a>
+            </div>
+
             <div className="flex gap-2 justify-end">
               <button
                 onClick={() => setShareModalOpen(false)}
@@ -1782,23 +2014,6 @@ function VerifyPage() {
                 style={{ background: 'var(--muted)', color: 'var(--foreground)', border: '1px solid var(--border)' }}
               >
                 Close
-              </button>
-              <button
-                onClick={copyShareLink}
-                className="rounded-lg px-3 py-2 text-sm font-medium flex items-center gap-2"
-                style={{ background: copySuccess ? '#10b981' : 'var(--primary)', color: 'var(--primary-foreground)' }}
-              >
-                {copySuccess ? (
-                  <>
-                    <CheckCircle2 className="h-4 w-4" />
-                    Copied!
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-4 w-4" />
-                    Copy Link
-                  </>
-                )}
               </button>
             </div>
           </div>
@@ -1913,6 +2128,274 @@ function VerifyPage() {
             </div>
             <div className="flex-1 overflow-y-auto p-4 sm:p-6">
               <MemoryManager uid={user?.uid || null} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Privacy Warning Modal */}
+      {showPrivacyWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowPrivacyWarning(false)} />
+          <div className="relative z-10 w-full max-w-md rounded-2xl border bg-white p-6 shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-yellow-100">
+                <AlertTriangle className="h-5 w-5 text-yellow-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900">
+                Make Conversation Public?
+              </h3>
+            </div>
+            
+            <div className="mb-6">
+              <p className="text-sm text-gray-600 mb-3">
+                Are you sure you want to make this conversation public? This will:
+              </p>
+              <ul className="text-sm text-gray-600 space-y-2">
+                <li className="flex items-start gap-2">
+                  <span className="text-yellow-600 mt-1">•</span>
+                  <span>Make this conversation visible to anyone with the link</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-yellow-600 mt-1">•</span>
+                  <span>Allow others to view your fact-checking results</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-yellow-600 mt-1">•</span>
+                  <span>Generate a shareable public link</span>
+                </li>
+              </ul>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowPrivacyWarning(false)}
+                className="flex-1 rounded-lg px-4 py-2 text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmMakePublic}
+                className="flex-1 rounded-lg px-4 py-2 text-sm font-medium bg-green-600 text-white hover:bg-green-700"
+              >
+                Make Public
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Privacy Management Modal */}
+      {showPrivacyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowPrivacyModal(false)} />
+          <div className="relative z-10 w-full max-w-md rounded-2xl border bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold mb-4 text-gray-900">
+              Privacy Settings
+            </h3>
+            
+            {/* Current Status */}
+            <div className="mb-6">
+              <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg">
+                {privacyLevel === 'private' ? (
+                  <>
+                    <Lock className="h-5 w-5 text-gray-500" />
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">Private Conversation</div>
+                      <div className="text-xs text-gray-500">Only you can view this conversation</div>
+                    </div>
+                  </>
+                ) : privacyLevel === 'link' ? (
+                  <>
+                    <Share className="h-5 w-5 text-blue-600" />
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">Anyone with the link</div>
+                      <div className="text-xs text-gray-500">Only people with the direct link can view this conversation</div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <Globe className="h-5 w-5 text-green-600" />
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">Public Conversation</div>
+                      <div className="text-xs text-gray-500">Visible in public reports and discoverable by anyone</div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Privacy Options */}
+            <div className="mb-6 space-y-3">
+              <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                <input
+                  type="radio"
+                  name="privacy"
+                  value="private"
+                  checked={privacyLevel === 'private'}
+                  onChange={() => handlePrivacyChange('private')}
+                  className="text-blue-600"
+                />
+                <div className="flex items-center gap-2">
+                  <Lock className="h-4 w-4 text-gray-500" />
+                  <div>
+                    <div className="text-sm font-medium text-gray-900">Private</div>
+                    <div className="text-xs text-gray-500">Only you can access this conversation</div>
+                  </div>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                <input
+                  type="radio"
+                  name="privacy"
+                  value="link"
+                  checked={privacyLevel === 'link'}
+                  onChange={() => handlePrivacyChange('link')}
+                  className="text-blue-600"
+                />
+                <div className="flex items-center gap-2">
+                  <Share className="h-4 w-4 text-blue-600" />
+                  <div>
+                    <div className="text-sm font-medium text-gray-900">Anyone with the link</div>
+                    <div className="text-xs text-gray-500">Only people with the direct link can view this conversation</div>
+                  </div>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                <input
+                  type="radio"
+                  name="privacy"
+                  value="public"
+                  checked={privacyLevel === 'public'}
+                  onChange={() => {
+                    setShowPrivacyWarning(true);
+                    setShowPrivacyModal(false);
+                  }}
+                  className="text-blue-600"
+                />
+                <div className="flex items-center gap-2">
+                  <Globe className="h-4 w-4 text-green-600" />
+                  <div>
+                    <div className="text-sm font-medium text-gray-900">Public</div>
+                    <div className="text-xs text-gray-500">Visible in public reports and discoverable by anyone</div>
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            {/* Public Link Display */}
+            {isPublic && publicLink && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Public Link
+                </label>
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    value={publicLink}
+                    readOnly
+                    className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm bg-gray-50"
+                  />
+                  <button
+                    onClick={copyShareLink}
+                    className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Info */}
+            <div className="mb-4">
+              <div className="text-xs text-gray-500">
+                <strong>Note:</strong> Public conversations will be visible in the public reports section and can be shared with anyone who has the link.
+              </div>
+            </div>
+
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setShowPrivacyModal(false)}
+                className="rounded-lg px-3 py-2 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Access Management Modal */}
+      {showAccessManagement && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowAccessManagement(false)} />
+          <div className="relative z-10 w-full max-w-2xl rounded-2xl border bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">
+                Manage Access
+              </h3>
+              <button
+                onClick={() => setShowAccessManagement(false)}
+                className="rounded-lg p-2 hover:bg-gray-100"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="mb-4">
+              <p className="text-sm text-gray-600">
+                Manage who has access to this conversation. You can remove access for specific users.
+              </p>
+            </div>
+
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {accessLogs.map((log, index) => (
+                <div key={index} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                  <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm">
+                    {log.userAgent?.charAt(0).toUpperCase() || 'A'}
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-gray-900">
+                      {log.ipAddress || 'Anonymous'} • {log.location || 'Unknown location'}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {new Date(log.accessedAt).toLocaleString()}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {log.userAgent || 'Unknown device'}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => removeAccess(log.id)}
+                    className="flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                  >
+                    <X className="h-3 w-3" />
+                    Remove Access
+                  </button>
+                </div>
+              ))}
+              
+              {accessLogs.length === 0 && (
+                <div className="text-center py-8 text-gray-500">
+                  <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <svg className="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                  </div>
+                  <p className="text-sm">No access logs found</p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowAccessManagement(false)}
+                className="flex-1 rounded-lg px-4 py-2 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>

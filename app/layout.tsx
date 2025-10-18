@@ -25,7 +25,7 @@ const items = [
     textColor: 'var(--secondary-foreground)',
     links: [
       { label: 'History', ariaLabel: 'View verification history', href: '/history' },
-      { label: 'Public reports', ariaLabel: 'Browse public reports', href: '/r' },
+      { label: 'Public reports', ariaLabel: 'Browse public reports', href: '/public-reports' },
     ],
   },
   {
