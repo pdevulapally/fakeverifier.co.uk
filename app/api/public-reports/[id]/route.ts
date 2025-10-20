@@ -91,7 +91,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
             // Extract sources (look for URLs or source mentions)
             const sourceMatches = content.match(/https?:\/\/[^\s]+/g) || [];
-            const sources = sourceMatches.map(url => {
+            const sources = sourceMatches.map((url: string) => {
               // Try to extract a meaningful name from the URL
               try {
                 const urlObj = new URL(url);
