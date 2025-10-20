@@ -135,7 +135,7 @@ export default function ShaderHero() {
             transition={{ duration: 0.5, delay: 0.3 }}
             className="mt-10"
           >
-            <AI_Prompt onSend={handleVerify} className="mx-auto" />
+            <AI_Prompt onSend={handleVerify} className="mx-auto" variant="hero" />
           </motion.div>
 
           {/* Additional spacing at bottom */}

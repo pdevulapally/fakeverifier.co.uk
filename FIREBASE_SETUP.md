@@ -52,6 +52,9 @@ npm install firebase
 - ✅ Protected routes (login required for /verify)
 - ✅ User profile with real data from Firebase
 - ✅ Secure authentication flow
+- ✅ File upload with Firebase Storage
+- ✅ Dynamic token/credit tracking
+- ✅ File preview and paste functionality
 
 ## 6. Authentication Flow
 
