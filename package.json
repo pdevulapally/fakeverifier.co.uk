@@ -12,7 +12,6 @@
   "dependencies": {
     "@gsap/react": "^2.1.2",
     "@mozilla/readability": "^0.6.0",
-    "@openai/agents": "^0.1.0",
     "@paper-design/shaders-react": "^0.0.57",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
     "@radix-ui/react-slot": "^1.2.3",

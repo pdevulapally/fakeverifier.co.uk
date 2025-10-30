@@ -86,45 +86,16 @@ const MAX_FILES = 10;
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 const PASTE_THRESHOLD = 200; // characters threshold for showing as pasted content
 
-// Real FakeVerifier models based on user plan
+// Only expose the Hugging Face model in UI
 const getAvailableModels = (userPlan: string): ModelOption[] => {
-  switch (userPlan) {
-    case "pro":
-    case "enterprise":
-      return [
-        {
-          id: "fakeverifier-agent",
-          name: "FakeVerifier Agent",
-          description: "Advanced fact-checking with agent builder",
-          badge: "Pro",
-        },
-        {
-          id: "claude-3-5-sonnet-latest",
-          name: "Claude 3.5 Sonnet",
-          description: "Anthropic's most capable model",
-        },
-      ];
-    case "free":
-    default:
-      return [
-        {
-          id: "gpt-4o",
-          name: "GPT-4o",
-          description: "OpenAI's most advanced model",
-          badge: "Latest",
-        },
-        {
-          id: "gpt-4-turbo",
-          name: "GPT-4 Turbo",
-          description: "Fast and capable",
-        },
-        {
-          id: "gpt-3.5-turbo",
-          name: "GPT-3.5 Turbo",
-          description: "Fast and efficient",
-        },
-      ];
-  }
+  return [
+    {
+      id: "fakeverifier-hf",
+      name: "FakeVerifier (Hugging Face)",
+      description: "Your trained classifier on LIAR dataset",
+      badge: "Recommended",
+    },
+  ];
 };
 
 // File type helpers
@@ -1167,7 +1138,7 @@ export function AI_Prompt({
     
     // Get the selected model based on user plan
     const availableModels = getAvailableModels(userPlan);
-    const selectedModel = availableModels[0]?.id || "gpt-4o";
+    const selectedModel = availableModels[0]?.id || "fakeverifier-hf";
     
     // Call the original onSend function with the selected model
     onSend?.(message, selectedModel, imageFiles);

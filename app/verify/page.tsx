@@ -32,6 +32,8 @@ import { TextShimmer } from '@/components/ui/text-shimmer';
 import { MemoryManager } from '@/components/MemoryManager';
 import { MemoryNotification } from '@/components/MemoryNotification';
 import { useAuth } from '@/contexts/AuthContext';
+import ModelIntroModal from '@/components/ModelIntroModal';
+
 function TokenCounters({ uid }: { uid?: string | null }) {
   const [data, setData] = useState<{ daily: number; monthly: number; plan: string } | null>(null);
   useEffect(() => {
@@ -707,7 +709,7 @@ function VerifyPage() {
             context: recent + memoriesContext 
           },
           nocache: true,
-          model: model || 'GPT-4-1 Mini',
+          model: model || 'fakeverifier-hf',
           imageBase64Array: imageBase64Array
         })
       });
@@ -994,6 +996,7 @@ function VerifyPage() {
 
   return (
     <div className="h-screen w-screen bg-gray-100 overflow-hidden">
+      <ModelIntroModal />
       {/* Delete Confirmation Modal */}
       {confirmDeleteOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">

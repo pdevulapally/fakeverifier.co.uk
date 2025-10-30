@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { runCredibleCheckAgent } from '@/lib/agents/credibleCheckAgent';
+import { verifyClaim, parseFakeVerifierOutput } from '@/lib/fakeVerifierClient';
 
 type TimelineEvent = {
   id: string;
@@ -38,8 +38,9 @@ export async function GET(req: NextRequest) {
 
       (async () => {
         try {
-          const res = await runCredibleCheckAgent(q);
-          const verdictMsg = res?.parsed?.verdict ? `Verdict: ${res.parsed.verdict}` : 'Verdict ready!';
+          const output = await verifyClaim(q);
+          const parsed = parseFakeVerifierOutput(output);
+          const verdictMsg = parsed?.verdict ? `Verdict: ${parsed.verdict}` : 'Verdict ready!';
           send({ id: 'verdict', stage: 'verdict', message: verdictMsg, timestamp: now() });
         } catch (e: any) {
           send({ id: 'verdict', stage: 'verdict', message: `Error: ${e?.message || 'failed'}`, timestamp: Date.now() });

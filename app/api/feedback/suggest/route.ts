@@ -1,33 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { callLLM } from '@/lib/llm';
 
 export async function POST(req: NextRequest) {
   try {
     const { transcript } = await req.json();
     const text = typeof transcript === 'string' ? transcript.slice(0, 6000) : '';
 
-    const sys = 'You generate concise, context-aware feedback reason buttons for an AI chat product.';
-    const user = `Chat transcript (most recent last):\n${text}\n\nReturn 4-6 short button labels (2-4 words) describing why the last assistant reply was unhelpful, focusing on tone, clarity, factuality, relevance, hallucination, missing steps, or formatting. Avoid code-specific labels unless the chat discusses code.`;
-
-    const res: any = await callLLM({
-      system: sys,
-      user,
-      schema: {
-        type: 'object',
-        properties: {
-          reasons: {
-            type: 'array',
-            minItems: 4,
-            maxItems: 6,
-            items: { type: 'string' },
-          },
-        },
-        required: ['reasons'],
-      },
-      tier: 'free',
-    });
-
-    const reasons: string[] = Array.isArray(res?.reasons) ? res.reasons.filter((r: any) => typeof r === 'string' && r.trim()).slice(0, 6) : [];
+    // Simple heuristic button suggestions without LLM
+    const lower = text.toLowerCase();
+    const reasons: string[] = [];
+    if (lower.includes('not true') || lower.includes('incorrect') || lower.includes('fake')) reasons.push('Not factual');
+    if (lower.includes('confusing') || lower.includes('unclear')) reasons.push('Unclear');
+    if (lower.includes('too long') || lower.length > 1200) reasons.push('Too verbose');
+    if (lower.includes('off topic') || lower.includes('irrelevant')) reasons.push('Irrelevant');
+    if (lower.includes('missing') || lower.includes('steps')) reasons.push('Missing steps');
+    if (reasons.length < 4) {
+      ['Not factual', 'Unclear', 'Too verbose', 'Irrelevant', 'Missing steps', 'Hallucinated'].forEach((r) => {
+        if (reasons.length < 6 && !reasons.includes(r)) reasons.push(r);
+      });
+    }
     return NextResponse.json({ reasons });
   } catch (e) {
     return NextResponse.json({ reasons: ['Not clear enough', 'Missing context', 'Not factual', 'Too verbose'] });

@@ -26,6 +26,7 @@ const items = [
     links: [
       { label: 'History', ariaLabel: 'View verification history', href: '/history' },
       { label: 'Public reports', ariaLabel: 'Browse public reports', href: '/public-reports' },
+      { label: 'Status', ariaLabel: 'Check system status', href: '/status' },
     ],
   },
   {

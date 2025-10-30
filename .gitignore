@@ -1,9 +1,29 @@
 .env*
-.next
-node_modules
-.vercel
-dist
+.next/
+node_modules/
+.vercel/
+dist/
+coverage/
+out/
 *.log
 firebase-debug.log
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Local artifacts
+converted/
+
+# Model artifacts (keep off GitHub; use HF Hub or Git LFS)
+*.safetensors
+*.pt
+*.bin
+*.onnx
+fakeverifier-liar/
+
+# Editors
+.vscode/
+.idea/
 
 %USERPROFILE%

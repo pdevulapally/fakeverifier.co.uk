@@ -1,20 +1,18 @@
 import { NextRequest } from 'next/server';
-import { ingest } from '@/lib/ingest';
-import { retrieve } from '@/lib/retrieve';
-import { crossCheck } from '@/lib/agents/crossCheck';
-import { judge } from '@/lib/agents/judge';
-import { pack } from '@/lib/pack';
+// Replaced complex OpenAI-based pipeline with HF FakeVerifier client
 import { ensureQuota } from '@/lib/quota';
 import { db } from '@/lib/firebaseAdmin';
-import { callLLM } from '@/lib/llm';
+import { fetchWithRetry, logNetworkError, getErrorMessage } from '@/lib/network-utils';
+import { verifyClaim, parseFakeVerifierOutput } from '@/lib/fakeVerifierClient';
 
 // 🔹 Helper to extract <title> from HTML for dynamic source naming
 async function fetchTitle(url: string): Promise<string | null> {
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 4000); // 4s timeout
-    const res = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeout);
+    const res = await fetchWithRetry(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; FakeVerifier/1.0)',
+      },
+    });
     if (!res.ok) return null;
     const html = await res.text();
     const match = html.match(/<title>(.*?)<\/title>/i);
@@ -22,7 +20,8 @@ async function fetchTitle(url: string): Promise<string | null> {
       return match[1].replace(/\s+/g, ' ').trim();
     }
     return null;
-  } catch {
+  } catch (error) {
+    logNetworkError(error, "Title extraction", url);
     return null;
   }
 }
@@ -32,7 +31,7 @@ async function fetchLiveNews(query: string): Promise<{ url: string; title?: stri
   if (!query?.trim()) return [];
   if (!process.env.SERPER_API_KEY) return [];
   try {
-    const res = await fetch('https://google.serper.dev/news', {
+    const res = await fetchWithRetry('https://google.serper.dev/news', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -52,7 +51,8 @@ async function fetchLiveNews(query: string): Promise<{ url: string; title?: stri
       publisher: n.source,
       publishedTime: n.date || n.publishedDate,
     })).filter((n: any) => n.url);
-  } catch {
+  } catch (error) {
+    logNetworkError(error, "Serper news fetch", "https://google.serper.dev/news");
     return [];
   }
 }
@@ -66,7 +66,7 @@ async function fetchNewsApi(query: string): Promise<{ url: string; title?: strin
     url.searchParams.set('q', query);
     url.searchParams.set('pageSize', '5');
     url.searchParams.set('sortBy', 'publishedAt');
-    const res = await fetch(url.toString(), {
+    const res = await fetchWithRetry(url.toString(), {
       headers: { 'X-Api-Key': process.env.NEWS_API_KEY as string },
       cache: 'no-store',
     });
@@ -80,7 +80,8 @@ async function fetchNewsApi(query: string): Promise<{ url: string; title?: strin
       publisher: a?.source?.name,
       publishedTime: a.publishedAt,
     })).filter((a: any) => a.url);
-  } catch {
+  } catch (error) {
+    logNetworkError(error, "NewsAPI fetch", "https://newsapi.org/v2/everything");
     return [];
   }
 }
@@ -94,34 +95,8 @@ function normalizeUrl(u: string): string {
   }
 }
 
-// 🔹 Generate AI follow-up questions via OpenAI (gpt-4o-mini)
-async function generateFollowUps(claim: string, context: string): Promise<string[]> {
-  try {
-    const sys = 'You generate concise, intelligent follow-up questions to verify or deepen a claim.';
-    const prompt = `Claim: ${claim}\nContext: ${context || ''}\n\nGenerate 3–5 intelligent, human-sounding follow-up questions related to verifying or expanding this claim.`;
-    const res: any = await callLLM({
-      system: sys,
-      user: prompt,
-      schema: {
-        type: 'object',
-        properties: {
-          questions: {
-            type: 'array',
-            minItems: 3,
-            maxItems: 5,
-            items: { type: 'string' },
-          },
-        },
-        required: ['questions'],
-      },
-      tier: 'pro', // ensure OpenAI path with gpt-4o-mini per project config
-    });
-    const qs = Array.isArray(res?.questions) ? res.questions : [];
-    return qs.filter((q: any) => typeof q === 'string' && q.trim()).slice(0, 5);
-  } catch {
-    return [];
-  }
-}
+// 🔹 Follow-ups: keep default fallbacks, skip LLM generation in HF mode
+async function generateFollowUps(_: string, __: string): Promise<string[]> { return []; }
 
 // 🔹 Convert confidence score to qualitative text
 function confidenceLabel(score: number): string {
@@ -274,22 +249,9 @@ export async function POST(req: NextRequest) {
       plan = 'free';
     }
 
-    // Handle conversational responses
+    // Handle conversational responses without LLM (static friendly text)
     if (isConversational) {
-      // For conversational requests, use a simpler approach
-      const conversationalResponse = await callLLM({
-        system: `You are FakeVerifier, a friendly and conversational AI assistant. You're like ChatGPT - you can chat about anything, help with general questions, and also specialize in fact-checking when needed.
-
-Be warm, friendly, and engaging. Respond naturally to greetings and general questions. If someone asks about fact-checking capabilities, explain that you can help verify claims, headlines, articles, and social media posts.
-
-Keep responses conversational and helpful. Don't use formal fact-checking format unless specifically asked to verify something.`,
-        user: input.raw,
-        schema: null,
-        tier: plan,
-        model: model || 'gpt-4o'
-      });
-
-      const conversationalText = conversationalResponse.explanation || conversationalResponse.rawText || 'Hello! I\'m FakeVerifier, your friendly AI assistant. I can help with general questions and also specialize in fact-checking when you need to verify claims or articles. What would you like to chat about?';
+      const conversationalText = 'Hello! I\'m FakeVerifier, your friendly AI assistant. I can help with general questions and also specialize in fact-checking when you need to verify claims or articles. What would you like to chat about?';
       
       return new Response(
         JSON.stringify({
@@ -300,8 +262,8 @@ Keep responses conversational and helpful. Don't use formal fact-checking format
           sources: [],
           evidenceSnippets: [],
           followUps: [], // Empty follow-ups for conversational responses to avoid duplication
-          modelUsed: conversationalResponse.modelUsed,
-          cost: conversationalResponse.cost || {}
+          modelUsed: { vendor: 'huggingface', name: 'fakeverifier-app' },
+          cost: {}
         }),
         {
           status: 200,
@@ -332,42 +294,14 @@ Keep responses conversational and helpful. Don't use formal fact-checking format
       );
     }
 
-    // Build context-aware input
-    const contextualInput = { ...input, previousContext: context || '' };
-
-    // 1️⃣ Extract claims
-    const claims = await ingest(contextualInput);
-
-    // 2️⃣ Retrieve relevant sources
-    const corpus = await retrieve({ claims, input: contextualInput, userPlan: plan });
-
-    // 🔹 Live news before verification
-    const primaryClaim = (claims?.[0] || input?.raw || '').toString().slice(0, 300);
-    const [liveNewsSerper, liveNewsNewsApi] = await Promise.all([
-      fetchLiveNews(primaryClaim),
-      fetchNewsApi(primaryClaim),
-    ]);
-
-    // 🔹 Merge and deduplicate sources by URL
-    const existing = Array.isArray((corpus as any)?.sources) ? (corpus as any).sources : [];
-    const mergedByUrl = new Map<string, any>();
-    for (const s of [...existing, ...liveNewsSerper, ...liveNewsNewsApi]) {
-      if (!s || !s.url) continue;
-      const key = normalizeUrl(s.url);
-      if (!mergedByUrl.has(key)) {
-        mergedByUrl.set(key, s);
-      }
-    }
-    (corpus as any).sources = Array.from(mergedByUrl.values());
-
-    // 3️⃣ Cross-check
-    const cross = await crossCheck({ claims, corpus, tier: plan });
+    // HF path: directly call hosted FakeVerifier model with the primary input
+    const primaryClaim = (input?.raw || '').toString().slice(0, 300);
 
   // 3.5️⃣ Safety: avoid definitive verdicts on sensitive private attributes about individuals
   // Rationale: For private attributes (sexual orientation, religion, health, disability, caste/ethnicity, etc.),
   // unless there is explicit, first-person self-identification from the subject, we should not return
   // a factual verdict. We instead respond with Unverified and a short explanation.
-  const fullText = `${(input?.raw || '').toString()}\n${(claims || []).join(' ')}`.toLowerCase();
+  const fullText = `${(input?.raw || '').toString()}\n${primaryClaim}`.toLowerCase();
 
   // Minimal heuristic for detecting an individual mention; product teams should replace with NER
   const targetsIndividual = /(\bmr\.?\b|\bms\.?\b|\bdr\.?\b|\bprime\s+minister\b|\bpresident\b|\bminister\b|\bchief\s+minister\b|\bcm\b|\bpresident\b|\bceo\b|\bchairman\b|\bmodi\b|\bnarendra\s+modi\b)/i.test(input?.raw || '');
@@ -384,119 +318,51 @@ Keep responses conversational and helpful. Don't use formal fact-checking format
 
   const matchedCategory = SENSITIVE_CATEGORIES.find(cat => cat.phrases.some(p => fullText.includes(p)));
 
-  let decision;
   if (targetsIndividual && matchedCategory) {
-    decision = {
+    const markdown = formatFactCheckMarkdown({
       verdict: 'Unverified',
       confidence: 0,
-      explanation:
-        `We do not issue factual verdicts on sensitive private attributes (e.g., ${matchedCategory.label}) about individuals without explicit, direct self-identification. The appropriate status is Unverified.`,
-    } as any;
-  } else {
-    // 4️⃣ Judge verdict (with image analysis if provided)
-    decision = await judge({ cross, imageBase64Array, originalInput: input?.raw?.toString() || primaryClaim, model, tier: plan });
+      explanation: `We do not issue factual verdicts on sensitive private attributes (e.g., ${matchedCategory.label}) about individuals without explicit, direct self-identification. The appropriate status is Unverified.`,
+      sources: [],
+      evidenceSnippets: [],
+      followUps: [
+        'Is there a first-person, verifiable statement from the individual?',
+        'What is the public relevance of this information?'
+      ],
+    });
+    return new Response(JSON.stringify({
+      verdict: 'Unverified',
+      confidence: 0,
+      explanation: 'Sensitive private attribute about an individual',
+      sources: [],
+      evidenceSnippets: [],
+      followUps: [],
+      messageMarkdown: markdown,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
 
-    // 5️⃣ Pack structured evidence
-    const evidence = await pack({ cross, decision });
+    // Call Hugging Face FakeVerifier model
+    const hfOutput = await verifyClaim(primaryClaim);
+    const parsed = parseFakeVerifierOutput(hfOutput);
 
-    // 🔹 Build dynamic sources list from both corpus and judge
-    let sources = [];
-    
-    // Add sources from corpus (retrieved sources)
-    const corpusSources = (corpus?.sources || [])
-      .filter((s: any) => s.url)
-      .slice(0, 5)
-      .map((s: any) => ({ url: s.url, title: s.title, text: s.text }));
-    
-    // Add sources from judge (sourcesChecked)
-    const judgeSources = (decision?.sourcesChecked || [])
-      .filter((s: string) => s && s.startsWith('http'))
-      .slice(0, 5)
-      .map((s: string) => ({ url: s, title: '', text: '' }));
-    
-    // Combine and deduplicate by URL
-    const allSources = [...corpusSources, ...judgeSources];
-    const uniqueSources = new Map();
-    allSources.forEach(s => {
-      if (s.url && !uniqueSources.has(s.url)) {
-        uniqueSources.set(s.url, s);
-      }
-    });
-    
-    sources = Array.from(uniqueSources.values()).slice(0, 10);
-
-    // 🔹 Dynamically fetch page titles for unnamed sources
-    const fetchPromises = sources.map(async (s) => {
-      if (!s.title && s.url.startsWith('http')) {
-        const t = await fetchTitle(s.url);
-        if (t) s.title = t;
-      }
-      return s;
-    });
-    sources = await Promise.all(fetchPromises);
-
-    // 🔹 Extract evidence snippets
-    const claim = (claims?.[0] || '').toString();
-    const keywords: string[] = Array.from(
-      new Set<string>(
-        claim
-          .toLowerCase()
-          .split(/[^a-z0-9]+/)
-          .filter((w: string) => w.length > 3)
-      )
-    ).slice(0, 8);
-
-    const evidenceSnippets: { quote: string; url: string; title?: string }[] = [];
-    for (const s of sources) {
-      if (!s.text) continue;
-      const sentences = s.text.split(/(?<=[.!?])\s+/).slice(0, 80);
-      const hit = sentences.find((sent: string) =>
-        keywords.some((k) => sent.toLowerCase().includes(k))
-      );
-      if (hit)
-        evidenceSnippets.push({
-          quote: hit.trim().slice(0, 300),
-          url: s.url,
-          title: s.title,
-        });
-      if (evidenceSnippets.length >= 6) break;
-    }
-
-    // 🔹 AI follow-up questions
-    const generatedFollowUps = await generateFollowUps(primaryClaim, input?.context || '');
-    const followUps = generatedFollowUps.length
-      ? generatedFollowUps
-      : [
-          'What additional evidence could strengthen this conclusion?',
-          'Are there any sources that contradict these findings?',
-          'How recent is this information?',
-          'Could the claim be interpreted differently in another context?',
-        ];
-
-    const explanation =
-      decision?.explanation ||
-      decision?.reason ||
-      decision?.reasoning ||
-      'The claim was analyzed across multiple sources and verified using recent, credible reports.';
-
-    const markdown = formatFactCheckMarkdown({
-      verdict: decision?.verdict || 'Unknown',
-      confidence: decision?.confidence ?? 0,
-      explanation,
-      sources,
-      evidenceSnippets,
-      followUps,
-    });
+    // Build minimal response preserving frontend expectations
+    const defaultFollowUps = [
+      'What additional evidence could strengthen this conclusion?',
+      'Are there any sources that contradict these findings?',
+      'How recent is this information?',
+      'Could the claim be interpreted differently in another context?',
+    ];
 
     const result = {
-      verdict: decision?.verdict || 'Unknown',
-      confidence: decision?.confidence ?? 0,
-      explanation,
-      sources,
-      evidenceSnippets,
-      followUps,
-      messageMarkdown: markdown,
+      verdict: parsed.verdict || 'Unknown',
+      confidence: parsed.confidence || 0,
+      explanation: parsed.raw,
+      sources: [],
+      evidenceSnippets: [],
+      followUps: await generateFollowUps(primaryClaim, input?.context || '') || defaultFollowUps,
+      messageMarkdown: parsed.raw,
+      modelUsed: { vendor: 'huggingface', name: 'fakeverifier-app' },
+      cost: {},
     };
 
     return new Response(JSON.stringify(result), {
