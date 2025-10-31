@@ -7,7 +7,6 @@ import Link from "next/link"
 import { AI_Prompt } from "@/components/ui/animated-ai-input"
 import { useRouter } from "next/navigation"
 import dynamic from "next/dynamic"
-import ModelIntroModal from "@/components/ModelIntroModal"
 
 // Dynamically import shader components with SSR disabled
 const MeshGradient = dynamic(() => import("@paper-design/shaders-react").then(mod => ({ default: mod.MeshGradient })), { 
@@ -58,7 +57,6 @@ export default function ShaderHero() {
 
   return (
     <div ref={containerRef} className="min-h-screen relative overflow-hidden" style={{ background: 'var(--background)' }}>
-      <ModelIntroModal />
       <svg className="absolute inset-0 w-0 h-0">
         <defs>
           <filter id="glass-effect" x="-50%" y="-50%" width="200%" height="200%">

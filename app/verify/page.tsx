@@ -32,7 +32,6 @@ import { TextShimmer } from '@/components/ui/text-shimmer';
 import { MemoryManager } from '@/components/MemoryManager';
 import { MemoryNotification } from '@/components/MemoryNotification';
 import { useAuth } from '@/contexts/AuthContext';
-import ModelIntroModal from '@/components/ModelIntroModal';
 
 function TokenCounters({ uid }: { uid?: string | null }) {
   const [data, setData] = useState<{ daily: number; monthly: number; plan: string } | null>(null);
@@ -1024,7 +1023,6 @@ function VerifyPage() {
 
   return (
     <div className="h-screen w-screen bg-gray-100 overflow-hidden">
-      <ModelIntroModal />
       {/* Delete Confirmation Modal */}
       {confirmDeleteOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
