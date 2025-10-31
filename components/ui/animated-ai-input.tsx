@@ -62,13 +62,15 @@ export interface ModelOption {
   name: string;
   description: string;
   badge?: string;
+  logo?: string;
 }
 
 interface ChatInputProps {
   onSendMessage?: (
     message: string,
     files: FileWithPreview[],
-    pastedContent: PastedContent[]
+    pastedContent: PastedContent[],
+    modelId: string
   ) => void;
   disabled?: boolean;
   placeholder?: string;
@@ -86,13 +88,30 @@ const MAX_FILES = 10;
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 const PASTE_THRESHOLD = 200; // characters threshold for showing as pasted content
 
-// Only expose the Hugging Face model in UI
+// Expose models based on plan: Free -> classifier only; Pro/Enterprise -> classifier + Llama chat
 const getAvailableModels = (userPlan: string): ModelOption[] => {
+  if (userPlan === "pro" || userPlan === "enterprise") {
+    return [
+      {
+        id: "fakeverifier-hf",
+        name: "FakeVerifier (Classifier)",
+        description: "Short factual verdicts with confidence",
+        badge: "Fast",
+      },
+      {
+        id: "llama-hf-router",
+        name: "Llama 3.1 (Chat)",
+        description: "Conversational multilingual reasoning with evidence",
+        badge: userPlan === "enterprise" ? "Enterprise" : "Pro",
+        logo: "/Images/Meta_Platforms_logo.svg",
+      },
+    ];
+  }
   return [
     {
       id: "fakeverifier-hf",
-      name: "FakeVerifier (Hugging Face)",
-      description: "Your trained classifier on LIAR dataset",
+      name: "FakeVerifier (Classifier)",
+      description: "Short factual verdicts with confidence",
       badge: "Recommended",
     },
   ];
@@ -470,8 +489,11 @@ const ModelSelectorDropdown: React.FC<{
         className="h-8 sm:h-9 px-2 sm:px-2.5 text-xs sm:text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent"
         onClick={() => setIsOpen(!isOpen)}
       >
-        <span className="truncate max-w-[100px] sm:max-w-[150px] md:max-w-[200px]">
-          {selectedModelData.name}
+        <span className="flex items-center gap-1.5 truncate max-w-[100px] sm:max-w-[150px] md:max-w-[200px]">
+          {selectedModelData.logo && (
+            <img src={selectedModelData.logo} alt="model logo" className="h-4 w-4 object-contain" />
+          )}
+          <span className="truncate">{selectedModelData.name}</span>
         </span>
         <ChevronDown
           className={cn(
@@ -497,6 +519,9 @@ const ModelSelectorDropdown: React.FC<{
             >
               <div>
                 <div className="flex items-center gap-2">
+                  {model.logo && (
+                    <img src={model.logo} alt="model logo" className="h-4 w-4 object-contain" />
+                  )}
                   <span className="font-medium text-popover-foreground">
                     {model.name}
                   </span>
@@ -638,8 +663,13 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
   // Update selected model when user plan changes
   useEffect(() => {
     const newModels = getAvailableModels(userPlan);
+    const preferred = (userPlan === "pro" || userPlan === "enterprise")
+      ? "llama-hf-router"
+      : "fakeverifier-hf";
+    const fallback = newModels[0]?.id || "fakeverifier-hf";
+    const nextId = newModels.find(m => m.id === preferred)?.id || fallback;
     if (newModels.length > 0 && !newModels.find(m => m.id === selectedModel)) {
-      setSelectedModel(newModels[0].id);
+      setSelectedModel(nextId);
     }
   }, [userPlan, selectedModel]);
 
@@ -900,7 +930,7 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
     // Clear any existing validation errors
     setValidationError("");
 
-    onSendMessage?.(message, files, pastedContent);
+    onSendMessage?.(message, files, pastedContent, selectedModel);
 
     setMessage("");
     files.forEach((file) => {
@@ -1129,19 +1159,16 @@ export function AI_Prompt({
   const handleSendMessage = (
     message: string,
     files: FileWithPreview[],
-    pastedContent: PastedContent[]
+    pastedContent: PastedContent[],
+    modelId: string
   ) => {
     // Convert files to the old format for backward compatibility
     const imageFiles = files
       .filter(f => f.file.type.startsWith('image/'))
       .map(f => f.file);
     
-    // Get the selected model based on user plan
-    const availableModels = getAvailableModels(userPlan);
-    const selectedModel = availableModels[0]?.id || "fakeverifier-hf";
-    
-    // Call the original onSend function with the selected model
-    onSend?.(message, selectedModel, imageFiles);
+    // Call the original onSend function with the chosen model
+    onSend?.(message, modelId || "fakeverifier-hf", imageFiles);
   };
 
   return (

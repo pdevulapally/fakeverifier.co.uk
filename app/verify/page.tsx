@@ -672,6 +672,34 @@ function VerifyPage() {
       // Build lightweight context from recent turns to help follow-ups
       const recent = messages.slice(-6).map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n');
 
+      // If user selected the Llama chat model, route to unified /api/chat
+      if ((model || '').includes('llama')) {
+        const chatRes = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: inputText, userId: user?.uid || 'demo', history: [], model: model || 'llama-hf-router' }),
+        });
+        const chatJson = await chatRes.json();
+        if (!chatRes.ok) throw new Error(chatJson?.error || 'Chat failed');
+
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: String(chatJson.result || ''),
+          timestamp: new Date()
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+        await processAutoMemories(inputText, assistantMessage.content);
+        if (targetConversationId && user) {
+          await fetch(`/api/conversations/${targetConversationId}/messages`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uid: user.uid, message: assistantMessage })
+          });
+        }
+        setLoading(false);
+        return;
+      }
+
       // Convert images to base64 if provided
       let imageBase64Array: string[] = [];
       if (imageFiles && imageFiles.length > 0) {

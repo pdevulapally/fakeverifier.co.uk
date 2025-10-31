@@ -1,147 +1,68 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { db } from '@/lib/firebaseAdmin';
 
-// Get all memories for a user
 export async function GET(req: NextRequest) {
   try {
+    if (!db) return new Response(JSON.stringify({ error: 'DB not configured' }), { status: 501 });
     const { searchParams } = new URL(req.url);
-    const uid = searchParams.get('uid');
-    
-    if (!uid) {
-      return NextResponse.json({ error: 'User ID required' }, { status: 400 });
-    }
-
-    if (!db) {
-      console.error('Firebase Admin database not initialized');
-      return NextResponse.json({ error: 'Database not initialized' }, { status: 500 });
-    }
-
-    // Fetch memories for the user
-    const memoriesRef = db.collection('memories');
-    const snapshot = await memoriesRef
-      .where('uid', '==', uid)
-      .orderBy('createdAt', 'desc')
-      .get();
-
-    const memories = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      createdAt: doc.data().createdAt?.toDate?.() || new Date(),
-      updatedAt: doc.data().updatedAt?.toDate?.() || new Date()
-    }));
-
-    return NextResponse.json({ memories });
-  } catch (error) {
-    console.error('Error fetching memories:', error);
-    return NextResponse.json({ error: 'Failed to fetch memories' }, { status: 500 });
+    const uid = (searchParams.get('uid') || '').toString();
+    if (!uid) return new Response(JSON.stringify({ error: 'Missing uid' }), { status: 400 });
+    const snap = await db.collection('users').doc(uid).collection('memories').orderBy('createdAt', 'desc').limit(100).get();
+    const memories = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    return new Response(JSON.stringify({ memories }), { status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+  } catch (e: any) {
+    return new Response(JSON.stringify({ error: e?.message || 'Internal error' }), { status: 500 });
   }
 }
 
-// Create a new memory
 export async function POST(req: NextRequest) {
   try {
-    const { uid, content, type, tags } = await req.json();
-    
-    if (!uid || !content) {
-      return NextResponse.json({ error: 'User ID and content required' }, { status: 400 });
-    }
-
-    if (!db) {
-      console.error('Firebase Admin database not initialized');
-      return NextResponse.json({ error: 'Database not initialized' }, { status: 500 });
-    }
-
-    const memoryData = {
-      uid,
-      content: content.trim(),
-      type: type || 'general',
-      tags: tags || [],
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      isActive: true
-    };
-
-    const memoriesRef = db.collection('memories');
-    const docRef = await memoriesRef.add(memoryData);
-    
-    return NextResponse.json({ 
-      id: docRef.id, 
-      ...memoryData 
-    });
-  } catch (error) {
-    console.error('Error creating memory:', error);
-    return NextResponse.json({ error: 'Failed to create memory' }, { status: 500 });
+    if (!db) return new Response(JSON.stringify({ error: 'DB not configured' }), { status: 501 });
+    const body = await req.json().catch(() => ({}));
+    const uid = (body?.uid || '').toString();
+    const content = (body?.content || '').toString().trim();
+    const type = (body?.type || 'general').toString();
+    const tags = Array.isArray(body?.tags) ? body.tags : [];
+    if (!uid || !content) return new Response(JSON.stringify({ error: 'Missing uid/content' }), { status: 400 });
+    const ref = db.collection('users').doc(uid).collection('memories').doc();
+    const now = new Date();
+    await ref.set({ content, type, tags, isActive: true, createdAt: now, updatedAt: now });
+    return new Response(JSON.stringify({ id: ref.id }), { status: 200 });
+  } catch (e: any) {
+    return new Response(JSON.stringify({ error: e?.message || 'Internal error' }), { status: 500 });
   }
 }
 
-// Update a memory
 export async function PUT(req: NextRequest) {
   try {
-    const { id, uid, content, type, tags, isActive } = await req.json();
-    
-    if (!id || !uid || !content) {
-      return NextResponse.json({ error: 'Memory ID, user ID, and content required' }, { status: 400 });
-    }
-
-    if (!db) {
-      console.error('Firebase Admin database not initialized');
-      return NextResponse.json({ error: 'Database not initialized' }, { status: 500 });
-    }
-
-    // Verify ownership
-    const memoryRef = db.collection('memories').doc(id);
-    const memory = await memoryRef.get();
-    
-    if (!memory.exists || memory.data()?.uid !== uid) {
-      return NextResponse.json({ error: 'Memory not found or access denied' }, { status: 404 });
-    }
-
-    const updateData = {
-      content: content.trim(),
-      type: type || 'general',
-      tags: tags || [],
-      updatedAt: new Date(),
-      ...(isActive !== undefined && { isActive })
-    };
-
-    await memoryRef.update(updateData);
-    
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error('Error updating memory:', error);
-    return NextResponse.json({ error: 'Failed to update memory' }, { status: 500 });
+    if (!db) return new Response(JSON.stringify({ error: 'DB not configured' }), { status: 501 });
+    const body = await req.json().catch(() => ({}));
+    const uid = (body?.uid || '').toString();
+    const id = (body?.id || '').toString();
+    if (!uid || !id) return new Response(JSON.stringify({ error: 'Missing uid/id' }), { status: 400 });
+    const content = (body?.content || '').toString().trim();
+    const type = (body?.type || 'general').toString();
+    const tags = Array.isArray(body?.tags) ? body.tags : [];
+    const ref = db.collection('users').doc(uid).collection('memories').doc(id);
+    await ref.update({ content, type, tags, updatedAt: new Date() });
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  } catch (e: any) {
+    return new Response(JSON.stringify({ error: e?.message || 'Internal error' }), { status: 500 });
   }
 }
 
-// Delete a memory
 export async function DELETE(req: NextRequest) {
   try {
+    if (!db) return new Response(JSON.stringify({ error: 'DB not configured' }), { status: 501 });
     const { searchParams } = new URL(req.url);
-    const id = searchParams.get('id');
-    const uid = searchParams.get('uid');
-    
-    if (!id || !uid) {
-      return NextResponse.json({ error: 'Memory ID and user ID required' }, { status: 400 });
-    }
-
-    if (!db) {
-      console.error('Firebase Admin database not initialized');
-      return NextResponse.json({ error: 'Database not initialized' }, { status: 500 });
-    }
-
-    // Verify ownership
-    const memoryRef = db.collection('memories').doc(id);
-    const memory = await memoryRef.get();
-    
-    if (!memory.exists || memory.data()?.uid !== uid) {
-      return NextResponse.json({ error: 'Memory not found or access denied' }, { status: 404 });
-    }
-
-    await memoryRef.delete();
-    
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error('Error deleting memory:', error);
-    return NextResponse.json({ error: 'Failed to delete memory' }, { status: 500 });
+    const uid = (searchParams.get('uid') || '').toString();
+    const id = (searchParams.get('id') || '').toString();
+    if (!uid || !id) return new Response(JSON.stringify({ error: 'Missing uid/id' }), { status: 400 });
+    const ref = db.collection('users').doc(uid).collection('memories').doc(id);
+    await ref.delete();
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  } catch (e: any) {
+    return new Response(JSON.stringify({ error: e?.message || 'Internal error' }), { status: 500 });
   }
 }
+ 
