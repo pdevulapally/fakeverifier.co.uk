@@ -736,7 +736,7 @@ function VerifyPage() {
             context: recent + memoriesContext 
           },
           nocache: true,
-          model: model || 'fakeverifier-hf',
+          model: model || 'openai-agent-builder',
           imageBase64Array: imageBase64Array
         })
       });

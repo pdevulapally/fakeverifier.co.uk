@@ -4,6 +4,7 @@ import { ensureQuota } from '@/lib/quota';
 import { db } from '@/lib/firebaseAdmin';
 import { fetchWithRetry, logNetworkError, getErrorMessage } from '@/lib/network-utils';
 import { verifyClaim, parseFakeVerifierOutput } from '@/lib/fakeVerifierClient';
+import { runWorkflow } from '@/lib/openaiAgent';
 
 // 🔹 Helper to extract <title> from HTML for dynamic source naming
 async function fetchTitle(url: string): Promise<string | null> {
@@ -341,34 +342,167 @@ export async function POST(req: NextRequest) {
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
 
-    // Call Hugging Face FakeVerifier model
-    const hfOutput = await verifyClaim(primaryClaim);
-    const parsed = parseFakeVerifierOutput(hfOutput);
+    // Route based on selected model
+    const selectedModel = (model || 'openai-agent-builder').toString().toLowerCase();
+    
+    // Try OpenAI AgentBuilder if selected or no model specified
+    const useOpenAI = (selectedModel === 'openai-agent-builder' || !model) && !!process.env.OPENAI_API_KEY;
 
-    // Build minimal response preserving frontend expectations
-    const defaultFollowUps = [
-      'What additional evidence could strengthen this conclusion?',
-      'Are there any sources that contradict these findings?',
-      'How recent is this information?',
-      'Could the claim be interpreted differently in another context?',
-    ];
+    if (useOpenAI) {
+      try {
+        const agentResponse = await runWorkflow({ input_as_text: input.raw });
+        
+        // Parse the agent output
+        let parsedOutput: any = {};
+        try {
+          if (typeof agentResponse.output_parsed === 'string') {
+            parsedOutput = JSON.parse(agentResponse.output_parsed);
+          } else if (typeof agentResponse.output_parsed === 'object') {
+            parsedOutput = agentResponse.output_parsed;
+          } else if (agentResponse.output_text) {
+            parsedOutput = JSON.parse(agentResponse.output_text);
+          }
+        } catch (parseError) {
+          // If parsing fails, use the raw text as explanation
+          const rawText = agentResponse.output_text || agentResponse.output_parsed || '';
+          parsedOutput = {
+            explanation: typeof rawText === 'string' ? rawText : JSON.stringify(rawText),
+            verdict: 'Unverified',
+            confidence: 50
+          };
+        }
 
-    const result = {
-      verdict: parsed.verdict || 'Unknown',
-      confidence: parsed.confidence || 0,
-      explanation: parsed.raw,
-      sources: [],
-      evidenceSnippets: [],
-      followUps: await generateFollowUps(primaryClaim, input?.context || '') || defaultFollowUps,
-      messageMarkdown: parsed.raw,
-      modelUsed: { vendor: 'huggingface', name: 'fakeverifier-app' },
-      cost: {},
-    };
+        // Check if the response is in fact-checking JSON format
+        if (parsedOutput.verdict || parsedOutput.confidence !== undefined || parsedOutput.sources) {
+          // Fact-checking mode response
+          const verdict = parsedOutput.verdict || 'Unverified';
+          const confidence = typeof parsedOutput.confidence === 'number' 
+            ? parsedOutput.confidence 
+            : parseInt(String(parsedOutput.confidence || '50'), 10);
+          
+          // Parse sources from the response
+          let sources: any[] = [];
+          if (Array.isArray(parsedOutput.sources)) {
+            sources = parsedOutput.sources.map((s: string) => {
+              try {
+                // Parse "Source Name – URL" format
+                const match = s.match(/^(.+?)\s*[–-]\s*(.+)$/);
+                if (match) {
+                  return { title: match[1].trim(), url: match[2].trim() };
+                }
+                // If it's just a URL
+                if (s.startsWith('http')) {
+                  try {
+                    const urlObj = new URL(s);
+                    return { title: urlObj.hostname.replace(/^www\./, ''), url: s };
+                  } catch {
+                    return { title: s, url: s };
+                  }
+                }
+                return { title: s, url: s };
+              } catch {
+                return { title: s, url: s };
+              }
+            });
+          }
 
-    return new Response(JSON.stringify(result), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
-    });
+          const explanation = parsedOutput.explanation || 'No explanation provided.';
+
+          // Build markdown response
+          const markdown = formatFactCheckMarkdown({
+            verdict,
+            confidence,
+            explanation,
+            sources: sources.map(s => ({ title: s.title, url: s.url })),
+            evidenceSnippets: [],
+            followUps: [
+              'What additional evidence could strengthen this conclusion?',
+              'Are there any sources that contradict these findings?',
+              'How recent is this information?',
+              'Could the claim be interpreted differently in another context?',
+            ],
+          });
+
+          const result = {
+            verdict,
+            confidence,
+            explanation,
+            sources: sources.map(s => ({ title: s.title || s.url, link: s.url })),
+            evidenceSnippets: [],
+            followUps: [
+              'What additional evidence could strengthen this conclusion?',
+              'Are there any sources that contradict these findings?',
+              'How recent is this information?',
+              'Could the claim be interpreted differently in another context?',
+            ],
+            messageMarkdown: markdown,
+            modelUsed: { vendor: 'openai', name: 'agent-builder' },
+            cost: {},
+          };
+
+          return new Response(JSON.stringify(result), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+          });
+        } else {
+          // Conversational/general response
+          const explanation = parsedOutput.explanation || parsedOutput.output_text || 
+            (typeof agentResponse.output_parsed === 'string' ? agentResponse.output_parsed : JSON.stringify(agentResponse.output_parsed));
+          
+          const result = {
+            verdict: 'Conversational',
+            confidence: 100,
+            explanation: explanation,
+            messageMarkdown: explanation,
+            sources: [],
+            evidenceSnippets: [],
+            followUps: [],
+            modelUsed: { vendor: 'openai', name: 'agent-builder' },
+            cost: {},
+          };
+
+          return new Response(JSON.stringify(result), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+          });
+        }
+      } catch (error) {
+        // Log error but continue to fallback
+        logNetworkError(error, 'OpenAI Agent Builder', 'runWorkflow');
+        console.error('OpenAI Agent error:', error);
+      }
+    }
+
+    // Use Hugging Face FakeVerifier model if selected, or as fallback if OpenAI fails
+    if (selectedModel === 'fakeverifier-hf' || !useOpenAI) {
+      const hfOutput = await verifyClaim(primaryClaim);
+      const parsed = parseFakeVerifierOutput(hfOutput);
+
+      // Build minimal response preserving frontend expectations
+      const defaultFollowUps = [
+        'What additional evidence could strengthen this conclusion?',
+        'Are there any sources that contradict these findings?',
+        'How recent is this information?',
+        'Could the claim be interpreted differently in another context?',
+      ];
+
+      const result = {
+        verdict: parsed.verdict || 'Unknown',
+        confidence: parsed.confidence || 0,
+        explanation: parsed.raw,
+        sources: [],
+        evidenceSnippets: [],
+        followUps: await generateFollowUps(primaryClaim, input?.context || '') || defaultFollowUps,
+        messageMarkdown: parsed.raw,
+        modelUsed: { vendor: 'huggingface', name: 'fakeverifier-app' },
+        cost: {},
+      };
+
+      return new Response(JSON.stringify(result), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+      });
+    }
   } catch (e: any) {
     return new Response(
       JSON.stringify({ error: e?.message || 'Internal server error' }),

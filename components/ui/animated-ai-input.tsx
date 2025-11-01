@@ -88,10 +88,20 @@ const MAX_FILES = 10;
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 const PASTE_THRESHOLD = 200; // characters threshold for showing as pasted content
 
-// Expose models based on plan: Free -> classifier only; Pro/Enterprise -> classifier + Llama chat
+// Expose models based on plan: All plans get OpenAI Agent Builder + plan-specific models
 const getAvailableModels = (userPlan: string): ModelOption[] => {
+  const baseModels = [
+    {
+      id: "openai-agent-builder",
+      name: "OpenAI Agent Builder",
+      description: "AI-powered fact-checking with web search and evidence",
+      badge: "Default",
+    },
+  ];
+
   if (userPlan === "pro" || userPlan === "enterprise") {
     return [
+      ...baseModels,
       {
         id: "fakeverifier-hf",
         name: "FakeVerifier (Classifier)",
@@ -108,11 +118,12 @@ const getAvailableModels = (userPlan: string): ModelOption[] => {
     ];
   }
   return [
+    ...baseModels,
     {
       id: "fakeverifier-hf",
       name: "FakeVerifier (Classifier)",
       description: "Short factual verdicts with confidence",
-      badge: "Recommended",
+      badge: "Fast",
     },
   ];
 };
@@ -199,143 +210,8 @@ const getFileExtension = (filename: string): string => {
   return extension.length > 8 ? extension.substring(0, 8) + "..." : extension;
 };
 
-// Input validation function
+// Input validation function - disabled, always returns valid
 const validateInput = (text: string): { isValid: boolean; error: string } => {
-  // Check for repeated characters (more than 5 in a row)
-  const repeatedCharPattern = /(.)\1{5,}/;
-  if (repeatedCharPattern.test(text)) {
-    return { isValid: false, error: "Please avoid repeated characters. Try pasting valid content instead." };
-  }
-
-  // Check for SQL injection patterns (more comprehensive)
-  const sqlPatterns = [
-    // SQL keywords (case insensitive, word boundaries)
-    /\b(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC|UNION|SCRIPT|TRUNCATE|GRANT|REVOKE)\b/i,
-    // SQL injection patterns
-    /(\b(OR|AND)\s+\d+\s*=\s*\d+)/i,
-    /(\b(OR|AND)\s+'.*'\s*=\s*'.*')/i,
-    /(\b(OR|AND)\s+".*"\s*=\s*".*")/i,
-    /(UNION\s+SELECT)/i,
-    /(DROP\s+TABLE)/i,
-    /(INSERT\s+INTO)/i,
-    /(UPDATE\s+SET)/i,
-    /(DELETE\s+FROM)/i,
-    /(SELECT\s+\*)/i,
-    /(FROM\s+\w+)/i,
-    /(WHERE\s+.*=.*)/i,
-    /(VALUES\s*\(.*\))/i,
-    // SQL injection with quotes and semicolons
-    /(';.*--)/i,
-    /(";.*--)/i,
-    /(OR\s+1\s*=\s*1)/i,
-    /(AND\s+1\s*=\s*1)/i,
-    // Multiple statements
-    /(;\s*(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER))/i,
-  ];
-  
-  for (const pattern of sqlPatterns) {
-    if (pattern.test(text)) {
-      return { isValid: false, error: "Code detected in your input. Please paste only text content for fact-checking." };
-    }
-  }
-
-  // Check for JavaScript/HTML code patterns
-  const codePatterns = [
-    /<script[^>]*>/i,
-    /<\/script>/i,
-    /<iframe[^>]*>/i,
-    /<\/iframe>/i,
-    /javascript:/i,
-    /on\w+\s*=/i,
-    /function\s+\w+\s*\(/i,
-    /var\s+\w+\s*=/i,
-    /let\s+\w+\s*=/i,
-    /const\s+\w+\s*=/i,
-    /console\.log/i,
-    /document\./i,
-    /window\./i,
-    /alert\s*\(/i,
-    /eval\s*\(/i,
-  ];
-  
-  for (const pattern of codePatterns) {
-    if (pattern.test(text)) {
-      return { isValid: false, error: "Script code detected. Please paste only plain text content for verification." };
-    }
-  }
-
-  // Check for Python code patterns
-  const pythonPatterns = [
-    /def\s+\w+\s*\(/i,
-    /import\s+\w+/i,
-    /from\s+\w+\s+import/i,
-    /print\s*\(/i,
-    /if\s+__name__\s*==\s*['"]__main__['"]/i,
-    /class\s+\w+/i,
-    /try:/i,
-    /except:/i,
-    /finally:/i,
-    /lambda\s+/i,
-    /yield\s+/i,
-    /async\s+def/i,
-    /await\s+/i,
-  ];
-  
-  for (const pattern of pythonPatterns) {
-    if (pattern.test(text)) {
-      return { isValid: false, error: "Python code detected. Please paste only text content for fact-checking." };
-    }
-  }
-
-  // Check for PHP code patterns
-  const phpPatterns = [
-    /<\?php/i,
-    /<\?=/i,
-    /<\?/i,
-    /\$_GET/i,
-    /\$_POST/i,
-    /\$_SESSION/i,
-    /\$_COOKIE/i,
-    /\$_SERVER/i,
-    /\$_FILES/i,
-    /echo\s+/i,
-    /print\s+/i,
-    /include\s+/i,
-    /require\s+/i,
-    /mysql_/i,
-    /mysqli_/i,
-    /pdo_/i,
-  ];
-  
-  for (const pattern of phpPatterns) {
-    if (pattern.test(text)) {
-      return { isValid: false, error: "PHP code detected. Please paste only text content for verification." };
-    }
-  }
-
-  // Check for shell command patterns
-  const shellPatterns = [
-    /\b(rm|rmdir|del|delete)\s+/i,
-    /\b(ls|dir|cat|type)\s+/i,
-    /\b(cd|chdir)\s+/i,
-    /\b(mkdir|md)\s+/i,
-    /\b(cp|copy|mv|move)\s+/i,
-    /\b(grep|find|search)\s+/i,
-    /\b(sudo|su|runas)\s+/i,
-    /\b(chmod|chown|attrib)\s+/i,
-    /\b(net|ping|tracert|nslookup)\s+/i,
-    /\b(wget|curl|powershell)\s+/i,
-    /\b(exec|system|shell_exec)\s*\(/i,
-    /\b(passthru|proc_open)\s*\(/i,
-    /\b(\.\/|\.\.\/|\/etc\/|\/bin\/|\/usr\/)/i,
-  ];
-  
-  for (const pattern of shellPatterns) {
-    if (pattern.test(text)) {
-      return { isValid: false, error: "System commands detected. Please paste only text content for fact-checking." };
-    }
-  }
-
   return { isValid: true, error: "" };
 };
 
@@ -635,13 +511,12 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [userPlan, setUserPlan] = useState<string>("free");
   const [uploading, setUploading] = useState(false);
-  const [validationError, setValidationError] = useState<string>("");
   const { user } = useAuth();
 
   // Get available models based on user plan
   const availableModels = models || getAvailableModels(userPlan);
   const [selectedModel, setSelectedModel] = useState(
-    defaultModel || availableModels[0]?.id || ""
+    defaultModel || availableModels.find(m => m.id === "openai-agent-builder")?.id || availableModels[0]?.id || "openai-agent-builder"
   );
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -663,10 +538,9 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
   // Update selected model when user plan changes
   useEffect(() => {
     const newModels = getAvailableModels(userPlan);
-    const preferred = (userPlan === "pro" || userPlan === "enterprise")
-      ? "llama-hf-router"
-      : "fakeverifier-hf";
-    const fallback = newModels[0]?.id || "fakeverifier-hf";
+    // Default to OpenAI Agent Builder for all plans
+    const preferred = "openai-agent-builder";
+    const fallback = newModels[0]?.id || "openai-agent-builder";
     const nextId = newModels.find(m => m.id === preferred)?.id || fallback;
     if (newModels.length > 0 && !newModels.find(m => m.id === selectedModel)) {
       setSelectedModel(nextId);
@@ -858,16 +732,6 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
 
       const textData = clipboardData.getData("text");
       if (textData) {
-        // Validate pasted content first
-        const validation = validateInput(textData);
-        if (!validation.isValid) {
-          e.preventDefault();
-          setValidationError(validation.error);
-          // Show error for 3 seconds then clear
-          setTimeout(() => setValidationError(""), 3000);
-          return;
-        }
-        
         if (
           textData.length > PASTE_THRESHOLD &&
           pastedContent.length < 5
@@ -919,16 +783,6 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
       alert("Please wait for all files to finish uploading.");
       return;
     }
-
-    // Final validation before sending
-    const finalValidation = validateInput(message);
-    if (!finalValidation.isValid) {
-      setValidationError(finalValidation.error);
-      return;
-    }
-
-    // Clear any existing validation errors
-    setValidationError("");
 
     onSendMessage?.(message, files, pastedContent, selectedModel);
 
@@ -998,16 +852,7 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
           ref={textareaRef}
           value={message}
           onChange={(e) => {
-            const validation = validateInput(e.target.value);
-            if (validation.isValid) {
-              setMessage(e.target.value);
-              setValidationError("");
-            } else {
-              // Block the input completely - don't update the message
-              setValidationError(validation.error);
-              // Reset to previous valid state
-              e.target.value = message;
-            }
+            setMessage(e.target.value);
           }}
           onPaste={handlePaste}
           onKeyDown={handleKeyDown}
@@ -1021,17 +866,6 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
           )}
           rows={1}
         />
-        {validationError && (
-          <div className="px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-red-700 bg-red-50 border-l-4 border-red-400 shadow-sm">
-            <div className="flex items-start sm:items-center">
-              <AlertCircle className="h-3 w-3 sm:h-4 sm:w-4 mr-2 text-red-500 mt-0.5 sm:mt-0 flex-shrink-0" />
-              <div className="flex flex-col sm:flex-row sm:items-center">
-                <span className="font-medium">Invalid Content:</span>
-                <span className="sm:ml-1 text-xs sm:text-sm">{validationError}</span>
-              </div>
-            </div>
-          </div>
-        )}
         <div className="flex items-center gap-1 sm:gap-2 justify-between w-full px-2 sm:px-3 pb-1.5">
           <div className="flex items-center gap-1 sm:gap-2">
             <Button
@@ -1168,7 +1002,7 @@ export function AI_Prompt({
       .map(f => f.file);
     
     // Call the original onSend function with the chosen model
-    onSend?.(message, modelId || "fakeverifier-hf", imageFiles);
+    onSend?.(message, modelId || "openai-agent-builder", imageFiles);
   };
 
   return (
