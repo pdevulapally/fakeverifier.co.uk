@@ -349,8 +349,28 @@ export async function POST(req: NextRequest) {
     const useOpenAI = (selectedModel === 'openai-agent-builder' || !model) && !!process.env.OPENAI_API_KEY;
 
     if (useOpenAI) {
+      // Declare timeoutId outside try block for cleanup in catch
+      let timeoutId: NodeJS.Timeout | undefined;
       try {
-        const agentResponse = await runWorkflow({ input_as_text: input.raw });
+        // Add timeout wrapper for the OpenAI agent call
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => {
+            reject(new Error('OpenAI Agent Builder request timed out after 90 seconds'));
+          }, 90000);
+        });
+        
+        const agentResponse = await Promise.race([
+          runWorkflow({ input_as_text: input.raw }),
+          timeoutPromise
+        ]) as any;
+        
+        // Clear timeout if workflow completed successfully
+        if (timeoutId) clearTimeout(timeoutId);
+        
+        // Check if agentResponse exists
+        if (!agentResponse || (!agentResponse.output_parsed && !agentResponse.output_text)) {
+          throw new Error('OpenAI Agent Builder returned empty response');
+        }
         
         // Parse the agent output
         let parsedOutput: any = {};
@@ -466,10 +486,26 @@ export async function POST(req: NextRequest) {
             headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
           });
         }
-      } catch (error) {
-        // Log error but continue to fallback
+      } catch (error: any) {
+        // Clear timeout if it's still active
+        if (typeof timeoutId !== 'undefined') clearTimeout(timeoutId);
+        
+        // Log error for debugging
         logNetworkError(error, 'OpenAI Agent Builder', 'runWorkflow');
         console.error('OpenAI Agent error:', error);
+        
+        // If OpenAI was explicitly selected, return error instead of falling back
+        if (selectedModel === 'openai-agent-builder') {
+          const errorMessage = error?.message || getErrorMessage(error) || 'OpenAI Agent Builder encountered an error';
+          return new Response(
+            JSON.stringify({ 
+              error: errorMessage,
+              message: `Failed to process request with OpenAI Agent Builder: ${errorMessage}. Please try again or select a different model.`
+            }),
+            { status: 500, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        // Otherwise, continue to fallback (for when no model is specified)
       }
     }
 

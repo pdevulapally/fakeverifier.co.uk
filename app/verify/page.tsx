@@ -731,6 +731,10 @@ function VerifyPage() {
         ? `\n\nRelevant memories about this user:\n${memories.map(m => `- ${m.content}`).join('\n')}`
         : '';
 
+      // Create abort controller for timeout handling (compatible with older browsers)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
+      
       const r = await fetch('/api/verify', { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
@@ -744,40 +748,26 @@ function VerifyPage() {
           nocache: true,
           model: model || 'openai-agent-builder',
           imageBase64Array: imageBase64Array
-        })
+        }),
+        signal: controller.signal
       });
-      const j = await r.json();
       
-      if (r.ok) {
-        const assistantMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: (j.messageMarkdown as string) || `**Verdict:** ${j.verdict}\n**Confidence:** ${j.confidence}%\n\n**Why:**\n${j.explanation}`,
-          timestamp: new Date()
-        };
-        setMessages(prev => [...prev, assistantMessage]);
-        
-        // Process auto-memories after AI response
-        await processAutoMemories(inputText, assistantMessage.content);
-        
-        // Save assistant message to conversation
-        if (targetConversationId && user) {
-          await fetch(`/api/conversations/${targetConversationId}/messages`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              uid: user.uid,
-              message: assistantMessage
-            })
-          });
-        // Refresh conversations to pick up any auto-updated title
-        await loadConversations();
-      }
+      clearTimeout(timeoutId);
       
-      // Clear timeline when verification completes
-      setTimeline([]);
-    } else {
-        if (r.status === 402 && j?.error === 'quota') {
+      // Check response status before parsing JSON
+      if (!r.ok) {
+        let errorData: any = {};
+        try {
+          const errorText = await r.text();
+          if (errorText) {
+            errorData = JSON.parse(errorText);
+          }
+        } catch (parseError) {
+          // If parsing fails, create a basic error object
+          errorData = { error: `Server error: ${r.status} ${r.statusText}` };
+        }
+        
+        if (r.status === 402 && errorData?.error === 'quota') {
           setError(null);
           const div = document.createElement('div');
           div.className = 'fixed inset-0 z-50 flex items-center justify-center';
@@ -791,15 +781,15 @@ function VerifyPage() {
                   </svg>
                 </div>
                 <h3 class="text-lg font-semibold mb-2" style="color: var(--foreground)">You've run out of tokens</h3>
-                <p class="text-sm mb-4" style="color: var(--muted-foreground)">Your plan (${j?.remaining?.plan || 'free'}) has reached its limit.</p>
+                <p class="text-sm mb-4" style="color: var(--muted-foreground)">Your plan (${errorData?.remaining?.plan || 'free'}) has reached its limit.</p>
                 <div class="bg-gray-50 rounded-lg p-3 mb-4">
                   <div class="flex justify-between items-center mb-2">
                     <span class="text-sm font-medium" style="color: var(--foreground)">Daily remaining:</span>
-                    <span class="text-lg font-bold ${(j?.remaining?.daily ?? 0) > 0 ? 'text-green-600' : 'text-red-500'}">${j?.remaining?.daily ?? 0}</span>
+                    <span class="text-lg font-bold ${(errorData?.remaining?.daily ?? 0) > 0 ? 'text-green-600' : 'text-red-500'}">${errorData?.remaining?.daily ?? 0}</span>
                   </div>
                   <div class="flex justify-between items-center">
                     <span class="text-sm font-medium" style="color: var(--foreground)">Monthly remaining:</span>
-                    <span class="text-lg font-bold ${(j?.remaining?.monthly ?? 0) > 0 ? 'text-green-600' : 'text-red-500'}">${j?.remaining?.monthly ?? 0}</span>
+                    <span class="text-lg font-bold ${(errorData?.remaining?.monthly ?? 0) > 0 ? 'text-green-600' : 'text-red-500'}">${errorData?.remaining?.monthly ?? 0}</span>
                   </div>
                 </div>
               </div>
@@ -813,11 +803,79 @@ function VerifyPage() {
           div.querySelector('#quota-cancel')?.addEventListener('click', close);
           div.querySelector('#quota-upgrade')?.addEventListener('click', () => { window.location.href = '/pricing'; });
         } else {
-          setError(j.error || 'Verification failed');
+          const errorMessage = errorData?.error || errorData?.message || `Verification failed (${r.status})`;
+          setError(errorMessage);
         }
+        // Clear timeline on error
+        setTimeline([]);
+        return;
       }
-    } catch {
-      setError('Network error');
+      
+      // Parse JSON only if response is OK
+      let j: any = {};
+      try {
+        const responseText = await r.text();
+        if (responseText) {
+          j = JSON.parse(responseText);
+        }
+      } catch (parseError) {
+        console.error('Failed to parse response:', parseError);
+        setError('Received invalid response from server. Please try again.');
+        setTimeline([]);
+        return;
+      }
+      
+      // Check if response has required fields
+      if (!j.messageMarkdown && !j.verdict && !j.explanation) {
+        console.error('Invalid response structure:', j);
+        setError('Received incomplete response from server. Please try again.');
+        setTimeline([]);
+        return;
+      }
+      
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: (j.messageMarkdown as string) || `**Verdict:** ${j.verdict}\n**Confidence:** ${j.confidence}%\n\n**Why:**\n${j.explanation}`,
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, assistantMessage]);
+      
+      // Process auto-memories after AI response
+      await processAutoMemories(inputText, assistantMessage.content);
+      
+      // Save assistant message to conversation
+      if (targetConversationId && user) {
+        await fetch(`/api/conversations/${targetConversationId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            uid: user.uid,
+            message: assistantMessage
+          })
+        });
+      // Refresh conversations to pick up any auto-updated title
+      await loadConversations();
+      }
+      
+      // Clear timeline when verification completes
+      setTimeline([]);
+    } catch (error: any) {
+      // Handle different types of errors
+      let errorMessage = 'Network error';
+      
+      if (error?.name === 'AbortError' || error?.name === 'TimeoutError') {
+        errorMessage = 'Request timed out. Please check your internet connection and try again.';
+      } else if (error?.name === 'TypeError' && error?.message?.includes('fetch')) {
+        errorMessage = 'Network connection failed. Please check your internet connection and try again.';
+      } else if (error?.message) {
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      }
+      
+      console.error('Verification error:', error);
+      setError(errorMessage);
       // Clear timeline on error too
       setTimeline([]);
     } finally {
