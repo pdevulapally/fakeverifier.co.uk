@@ -515,9 +515,16 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
 
   // Get available models based on user plan
   const availableModels = models || getAvailableModels(userPlan);
-  const [selectedModel, setSelectedModel] = useState(
-    defaultModel || availableModels.find(m => m.id === "openai-agent-builder")?.id || availableModels[0]?.id || "openai-agent-builder"
-  );
+  
+  // Initialize with OpenAI Agent Builder as default
+  const [selectedModel, setSelectedModel] = useState<string>(() => {
+    if (defaultModel) return defaultModel;
+    // Always prefer OpenAI Agent Builder as default
+    const initialModels = models || getAvailableModels("free"); // Use free as fallback for initial state
+    const openAIModel = initialModels.find(m => m.id === "openai-agent-builder");
+    if (openAIModel) return "openai-agent-builder";
+    return initialModels[0]?.id || "openai-agent-builder";
+  });
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -535,17 +542,36 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
       });
   }, [user?.uid]);
 
+  // Ensure OpenAI Agent Builder is selected by default when models are first loaded
+  useEffect(() => {
+    if (!defaultModel && availableModels.length > 0) {
+      const openAIModel = availableModels.find(m => m.id === "openai-agent-builder");
+      const isCurrentModelValid = availableModels.some(m => m.id === selectedModel);
+      
+      // If OpenAI Agent Builder is available and current model is invalid or not set, default to OpenAI
+      if (openAIModel && (!isCurrentModelValid || selectedModel !== "openai-agent-builder")) {
+        // Only auto-switch if the current model is invalid, otherwise respect user's choice
+        if (!isCurrentModelValid) {
+          setSelectedModel("openai-agent-builder");
+          onModelChange?.("openai-agent-builder");
+        }
+      }
+    }
+  }, [availableModels.length, defaultModel]); // Only run when models change, not on every render
+
   // Update selected model when user plan changes
   useEffect(() => {
     const newModels = getAvailableModels(userPlan);
-    // Default to OpenAI Agent Builder for all plans
-    const preferred = "openai-agent-builder";
-    const fallback = newModels[0]?.id || "openai-agent-builder";
-    const nextId = newModels.find(m => m.id === preferred)?.id || fallback;
-    if (newModels.length > 0 && !newModels.find(m => m.id === selectedModel)) {
-      setSelectedModel(nextId);
+    
+    // If current selected model is not in the new available models, switch to OpenAI Agent Builder (default)
+    const isCurrentModelAvailable = newModels.some(m => m.id === selectedModel);
+    if (newModels.length > 0 && !isCurrentModelAvailable) {
+      const openAIModel = newModels.find(m => m.id === "openai-agent-builder");
+      const preferred = openAIModel ? "openai-agent-builder" : (newModels[0]?.id || "openai-agent-builder");
+      setSelectedModel(preferred);
+      onModelChange?.(preferred);
     }
-  }, [userPlan, selectedModel]);
+  }, [userPlan, selectedModel, onModelChange]);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -889,13 +915,21 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
             </Button>
           </div>
           <div className="flex items-center gap-2">
-            {availableModels && availableModels.length > 0 && (
-              <ModelSelectorDropdown
-                models={availableModels}
-                selectedModel={selectedModel}
-                onModelChange={handleModelChangeInternal}
-              />
-            )}
+            {/* Always show model selector when multiple models are available */}
+            {availableModels && availableModels.length > 0 ? (
+              availableModels.length > 1 ? (
+                <ModelSelectorDropdown
+                  models={availableModels}
+                  selectedModel={selectedModel}
+                  onModelChange={handleModelChangeInternal}
+                />
+              ) : (
+                // Show single model as a badge when only one is available (shouldn't happen with current setup)
+                <div className="px-2 py-1 text-xs font-medium text-muted-foreground bg-muted rounded-md">
+                  {availableModels[0]?.name || "Model"}
+                </div>
+              )
+            ) : null}
 
             <Button
               size="icon"

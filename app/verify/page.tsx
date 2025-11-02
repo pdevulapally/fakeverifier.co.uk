@@ -731,10 +731,6 @@ function VerifyPage() {
         ? `\n\nRelevant memories about this user:\n${memories.map(m => `- ${m.content}`).join('\n')}`
         : '';
 
-      // Create abort controller for timeout handling (compatible with older browsers)
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
-      
       const r = await fetch('/api/verify', { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
@@ -748,26 +744,40 @@ function VerifyPage() {
           nocache: true,
           model: model || 'openai-agent-builder',
           imageBase64Array: imageBase64Array
-        }),
-        signal: controller.signal
+        })
       });
+      const j = await r.json();
       
-      clearTimeout(timeoutId);
-      
-      // Check response status before parsing JSON
-      if (!r.ok) {
-        let errorData: any = {};
-        try {
-          const errorText = await r.text();
-          if (errorText) {
-            errorData = JSON.parse(errorText);
-          }
-        } catch (parseError) {
-          // If parsing fails, create a basic error object
-          errorData = { error: `Server error: ${r.status} ${r.statusText}` };
-        }
+      if (r.ok) {
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: (j.messageMarkdown as string) || `**Verdict:** ${j.verdict}\n**Confidence:** ${j.confidence}%\n\n**Why:**\n${j.explanation}`,
+          timestamp: new Date()
+        };
+        setMessages(prev => [...prev, assistantMessage]);
         
-        if (r.status === 402 && errorData?.error === 'quota') {
+        // Process auto-memories after AI response
+        await processAutoMemories(inputText, assistantMessage.content);
+        
+        // Save assistant message to conversation
+        if (targetConversationId && user) {
+          await fetch(`/api/conversations/${targetConversationId}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              uid: user.uid,
+              message: assistantMessage
+            })
+          });
+        // Refresh conversations to pick up any auto-updated title
+        await loadConversations();
+      }
+      
+      // Clear timeline when verification completes
+      setTimeline([]);
+    } else {
+        if (r.status === 402 && j?.error === 'quota') {
           setError(null);
           const div = document.createElement('div');
           div.className = 'fixed inset-0 z-50 flex items-center justify-center';
@@ -781,15 +791,15 @@ function VerifyPage() {
                   </svg>
                 </div>
                 <h3 class="text-lg font-semibold mb-2" style="color: var(--foreground)">You've run out of tokens</h3>
-                <p class="text-sm mb-4" style="color: var(--muted-foreground)">Your plan (${errorData?.remaining?.plan || 'free'}) has reached its limit.</p>
+                <p class="text-sm mb-4" style="color: var(--muted-foreground)">Your plan (${j?.remaining?.plan || 'free'}) has reached its limit.</p>
                 <div class="bg-gray-50 rounded-lg p-3 mb-4">
                   <div class="flex justify-between items-center mb-2">
                     <span class="text-sm font-medium" style="color: var(--foreground)">Daily remaining:</span>
-                    <span class="text-lg font-bold ${(errorData?.remaining?.daily ?? 0) > 0 ? 'text-green-600' : 'text-red-500'}">${errorData?.remaining?.daily ?? 0}</span>
+                    <span class="text-lg font-bold ${(j?.remaining?.daily ?? 0) > 0 ? 'text-green-600' : 'text-red-500'}">${j?.remaining?.daily ?? 0}</span>
                   </div>
                   <div class="flex justify-between items-center">
                     <span class="text-sm font-medium" style="color: var(--foreground)">Monthly remaining:</span>
-                    <span class="text-lg font-bold ${(errorData?.remaining?.monthly ?? 0) > 0 ? 'text-green-600' : 'text-red-500'}">${errorData?.remaining?.monthly ?? 0}</span>
+                    <span class="text-lg font-bold ${(j?.remaining?.monthly ?? 0) > 0 ? 'text-green-600' : 'text-red-500'}">${j?.remaining?.monthly ?? 0}</span>
                   </div>
                 </div>
               </div>
@@ -803,79 +813,11 @@ function VerifyPage() {
           div.querySelector('#quota-cancel')?.addEventListener('click', close);
           div.querySelector('#quota-upgrade')?.addEventListener('click', () => { window.location.href = '/pricing'; });
         } else {
-          const errorMessage = errorData?.error || errorData?.message || `Verification failed (${r.status})`;
-          setError(errorMessage);
+          setError(j.error || 'Verification failed');
         }
-        // Clear timeline on error
-        setTimeline([]);
-        return;
       }
-      
-      // Parse JSON only if response is OK
-      let j: any = {};
-      try {
-        const responseText = await r.text();
-        if (responseText) {
-          j = JSON.parse(responseText);
-        }
-      } catch (parseError) {
-        console.error('Failed to parse response:', parseError);
-        setError('Received invalid response from server. Please try again.');
-        setTimeline([]);
-        return;
-      }
-      
-      // Check if response has required fields
-      if (!j.messageMarkdown && !j.verdict && !j.explanation) {
-        console.error('Invalid response structure:', j);
-        setError('Received incomplete response from server. Please try again.');
-        setTimeline([]);
-        return;
-      }
-      
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: (j.messageMarkdown as string) || `**Verdict:** ${j.verdict}\n**Confidence:** ${j.confidence}%\n\n**Why:**\n${j.explanation}`,
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, assistantMessage]);
-      
-      // Process auto-memories after AI response
-      await processAutoMemories(inputText, assistantMessage.content);
-      
-      // Save assistant message to conversation
-      if (targetConversationId && user) {
-        await fetch(`/api/conversations/${targetConversationId}/messages`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            uid: user.uid,
-            message: assistantMessage
-          })
-        });
-      // Refresh conversations to pick up any auto-updated title
-      await loadConversations();
-      }
-      
-      // Clear timeline when verification completes
-      setTimeline([]);
-    } catch (error: any) {
-      // Handle different types of errors
-      let errorMessage = 'Network error';
-      
-      if (error?.name === 'AbortError' || error?.name === 'TimeoutError') {
-        errorMessage = 'Request timed out. Please check your internet connection and try again.';
-      } else if (error?.name === 'TypeError' && error?.message?.includes('fetch')) {
-        errorMessage = 'Network connection failed. Please check your internet connection and try again.';
-      } else if (error?.message) {
-        errorMessage = error.message;
-      } else if (typeof error === 'string') {
-        errorMessage = error;
-      }
-      
-      console.error('Verification error:', error);
-      setError(errorMessage);
+    } catch {
+      setError('Network error');
       // Clear timeline on error too
       setTimeline([]);
     } finally {
@@ -1785,12 +1727,12 @@ function VerifyPage() {
       </div>
       
             {/* Messages */}
-            <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6">
+            <div className="flex-1 space-y-4 sm:space-y-6 overflow-y-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6">
           {messages.length === 0 ? (
                 <div className="grid h-full place-items-center">
-              <div className="text-center">
-                    <h2 className="mb-2 text-2xl font-bold text-gray-900">Start a verification</h2>
-                    <p className="text-gray-600">Paste a URL or text to verify its authenticity</p>
+              <div className="text-center px-4">
+                    <h2 className="mb-2 text-xl sm:text-2xl font-bold text-gray-900">Start a verification</h2>
+                    <p className="text-sm sm:text-base text-gray-600">Paste a URL or text to verify its authenticity</p>
               </div>
             </div>
           ) : (
@@ -1798,32 +1740,32 @@ function VerifyPage() {
                   <div key={m.id} className="flex w-full justify-center">
                     <div className="w-full max-w-3xl">
                       {m.role === 'assistant' ? (
-                        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-800">
-                            <img src="/Images/Fakeverifier-official-logo.png" alt="FakeVerifier Official Logo" className="h-6 w-auto" />
-                            <CheckCircle2 className="h-4 w-4 text-purple-600" />
+                        <div className="rounded-xl sm:rounded-2xl border border-gray-200 bg-white p-3 sm:p-4 md:p-5 shadow-sm">
+                          <div className="mb-2 sm:mb-3 flex items-center gap-2 text-xs sm:text-sm font-semibold text-gray-800">
+                            <img src="/Images/Fakeverifier-official-logo.png" alt="FakeVerifier Official Logo" className="h-5 w-auto sm:h-6" />
+                            <CheckCircle2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-purple-600" />
                           </div>
-                          <div className="prose prose-sm max-w-none text-gray-900">
-                            <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: mdToHtml(m.content) }} />
+                          <div className="prose prose-sm max-w-none text-gray-900 break-words overflow-wrap-anywhere">
+                            <div className="prose prose-sm max-w-none break-words" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }} dangerouslySetInnerHTML={{ __html: mdToHtml(m.content) }} />
                     </div>
                           {/* actions row */}
-                          <div className="mt-4 flex items-center gap-1">
-                            <button onClick={() => onFeedback(m.id, 'up')} className="rounded-lg p-2 hover:bg-gray-100"><ThumbsUp className="h-4 w-4 text-gray-500" /></button>
-                            <button onClick={() => onFeedback(m.id, 'down')} className="rounded-lg p-2 hover:bg-gray-100"><ThumbsDown className="h-4 w-4 text-gray-500" /></button>
-                            <button onClick={() => onCopy(m.content)} className="rounded-lg p-2 hover:bg-gray-100"><Copy className="h-4 w-4 text-gray-500" /></button>
-                            <button onClick={() => onShare(m.content)} className="rounded-lg p-2 hover:bg-gray-100"><Share className="h-4 w-4 text-gray-500" /></button>
-                            <button onClick={onRegenerate} className="rounded-lg p-2 hover:bg-gray-100"><RotateCcw className="h-4 w-4 text-gray-500" /></button>
+                          <div className="mt-3 sm:mt-4 flex flex-wrap items-center gap-1 sm:gap-2">
+                            <button onClick={() => onFeedback(m.id, 'up')} className="rounded-lg p-1.5 sm:p-2 hover:bg-gray-100 active:bg-gray-200 touch-manipulation"><ThumbsUp className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" /></button>
+                            <button onClick={() => onFeedback(m.id, 'down')} className="rounded-lg p-1.5 sm:p-2 hover:bg-gray-100 active:bg-gray-200 touch-manipulation"><ThumbsDown className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" /></button>
+                            <button onClick={() => onCopy(m.content)} className="rounded-lg p-1.5 sm:p-2 hover:bg-gray-100 active:bg-gray-200 touch-manipulation"><Copy className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" /></button>
+                            <button onClick={() => onShare(m.content)} className="rounded-lg p-1.5 sm:p-2 hover:bg-gray-100 active:bg-gray-200 touch-manipulation"><Share className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" /></button>
+                            <button onClick={onRegenerate} className="rounded-lg p-1.5 sm:p-2 hover:bg-gray-100 active:bg-gray-200 touch-manipulation"><RotateCcw className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" /></button>
                             <div className="ml-auto" />
-                            <button className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50">
+                            <button className="inline-flex items-center gap-2 rounded-lg sm:rounded-xl border border-gray-200 bg-white px-2.5 py-1.5 sm:px-3 sm:py-2 text-xs sm:text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 active:bg-gray-100 touch-manipulation">
                               Regenerate
                           </button>
                         </div>
 
                           {/* Feedback tray when thumbs down */}
                           {feedbackForMessageId === m.id && (
-                            <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-3">
-                              <div className="mb-2 text-sm font-medium text-gray-700">Tell us more:</div>
-                              <div className="flex flex-wrap gap-2">
+                            <div className="mt-3 sm:mt-4 rounded-lg sm:rounded-xl border border-gray-200 bg-gray-50 p-3">
+                              <div className="mb-2 text-xs sm:text-sm font-medium text-gray-700">Tell us more:</div>
+                              <div className="flex flex-wrap gap-1.5 sm:gap-2">
                                 {(dynamicReasons.length ? dynamicReasons : ['Not clear enough','Missing context','Not factual','Too verbose']).map((label) => (
                                   <button
                                     key={label}

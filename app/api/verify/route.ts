@@ -117,7 +117,7 @@ function formatFactCheckMarkdown({
 }: any): string {
   // Handle conversational responses - return just the explanation without any formatting
   if (verdict === 'Conversational') {
-    return explanation || 'Hello! I\'m FakeVerifier, your friendly AI assistant. I can help with general questions and also specialize in fact-checking when you need to verify claims or articles. What would you like to chat about?';
+    return explanation || '';
   }
 
   // Handle fact-checking responses
@@ -208,36 +208,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Check if this is a general conversation vs fact-checking request
-    const isGeneralConversation = (text: string) => {
-      const greetings = ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening', 'how are you', 'what\'s up', 'how\'s it going'];
-      const generalQuestions = ['what can you do', 'help me', 'tell me about', 'explain', 'how does', 'what is', 'who is', 'when is', 'where is', 'why is'];
-      
-      const lowerText = text.toLowerCase().trim();
-      
-      // Check for greetings
-      if (greetings.some(greeting => lowerText.includes(greeting))) {
-        return true;
-      }
-      
-      // Check for general questions (not fact-checking specific)
-      if (generalQuestions.some(question => lowerText.includes(question)) && 
-          !lowerText.includes('verify') && 
-          !lowerText.includes('check') && 
-          !lowerText.includes('fact') && 
-          !lowerText.includes('true') && 
-          !lowerText.includes('false') &&
-          !lowerText.includes('real') &&
-          !lowerText.includes('fake')) {
-        return true;
-      }
-      
-      return false;
-    };
-
-    const isConversational = isGeneralConversation(input.raw);
-
-    // Get user plan first
+    // Get user plan for image limits
     let plan: 'free' | 'pro' | 'enterprise' = 'free';
     try {
       if (uid && db) {
@@ -248,29 +219,6 @@ export async function POST(req: NextRequest) {
     } catch (error) {
       console.error('Error fetching user plan:', error);
       plan = 'free';
-    }
-
-    // Handle conversational responses without LLM (static friendly text)
-    if (isConversational) {
-      const conversationalText = 'Hello! I\'m FakeVerifier, your friendly AI assistant. I can help with general questions and also specialize in fact-checking when you need to verify claims or articles. What would you like to chat about?';
-      
-      return new Response(
-        JSON.stringify({
-          verdict: 'Conversational',
-          confidence: 100,
-          explanation: conversationalText,
-          messageMarkdown: conversationalText, // This will be used by the frontend instead of the verdict format
-          sources: [],
-          evidenceSnippets: [],
-          followUps: [], // Empty follow-ups for conversational responses to avoid duplication
-          modelUsed: { vendor: 'huggingface', name: 'fakeverifier-app' },
-          cost: {}
-        }),
-        {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
     }
 
     // Enforce per-plan image attachment limits
@@ -342,21 +290,22 @@ export async function POST(req: NextRequest) {
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
 
-    // Route based on selected model
+    // Route based on selected model - OpenAI Agent Builder is default for all plans
     const selectedModel = (model || 'openai-agent-builder').toString().toLowerCase();
     
-    // Try OpenAI AgentBuilder if selected or no model specified
+    // OpenAI AgentBuilder is default for all plans (free, pro, enterprise)
     const useOpenAI = (selectedModel === 'openai-agent-builder' || !model) && !!process.env.OPENAI_API_KEY;
+    let openAISucceeded = false;
 
     if (useOpenAI) {
       // Declare timeoutId outside try block for cleanup in catch
       let timeoutId: NodeJS.Timeout | undefined;
       try {
-        // Add timeout wrapper for the OpenAI agent call
+        // Add timeout wrapper for the OpenAI agent call (25s to avoid Vercel's 30s limit on free tier)
         const timeoutPromise = new Promise<never>((_, reject) => {
           timeoutId = setTimeout(() => {
-            reject(new Error('OpenAI Agent Builder request timed out after 90 seconds'));
-          }, 90000);
+            reject(new Error('OpenAI Agent Builder request timed out after 25 seconds'));
+          }, 25000);
         });
         
         const agentResponse = await Promise.race([
@@ -456,10 +405,11 @@ export async function POST(req: NextRequest) {
               'Could the claim be interpreted differently in another context?',
             ],
             messageMarkdown: markdown,
-            modelUsed: { vendor: 'openai', name: 'agent-builder' },
-            cost: {},
-          };
+          modelUsed: { vendor: 'openai', name: 'agent-builder' },
+          cost: {},
+        };
 
+          openAISucceeded = true;
           return new Response(JSON.stringify(result), {
             status: 200,
             headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
@@ -481,6 +431,7 @@ export async function POST(req: NextRequest) {
             cost: {},
           };
 
+          openAISucceeded = true;
           return new Response(JSON.stringify(result), {
             status: 200,
             headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
@@ -493,52 +444,65 @@ export async function POST(req: NextRequest) {
         // Log error for debugging
         logNetworkError(error, 'OpenAI Agent Builder', 'runWorkflow');
         console.error('OpenAI Agent error:', error);
-        
-        // If OpenAI was explicitly selected, return error instead of falling back
-        if (selectedModel === 'openai-agent-builder') {
-          const errorMessage = error?.message || getErrorMessage(error) || 'OpenAI Agent Builder encountered an error';
-          return new Response(
-            JSON.stringify({ 
-              error: errorMessage,
-              message: `Failed to process request with OpenAI Agent Builder: ${errorMessage}. Please try again or select a different model.`
-            }),
-            { status: 500, headers: { 'Content-Type': 'application/json' } }
-          );
-        }
-        // Otherwise, continue to fallback (for when no model is specified)
+        openAISucceeded = false;
+        // Always fallback to HuggingFace instead of returning error
+        // This ensures free plan users and users with network issues get a response
       }
     }
 
     // Use Hugging Face FakeVerifier model if selected, or as fallback if OpenAI fails
-    if (selectedModel === 'fakeverifier-hf' || !useOpenAI) {
-      const hfOutput = await verifyClaim(primaryClaim);
-      const parsed = parseFakeVerifierOutput(hfOutput);
+    if (selectedModel === 'fakeverifier-hf' || !useOpenAI || !openAISucceeded) {
+      try {
+        const hfOutput = await verifyClaim(primaryClaim);
+        const parsed = parseFakeVerifierOutput(hfOutput);
 
-      // Build minimal response preserving frontend expectations
-      const defaultFollowUps = [
-        'What additional evidence could strengthen this conclusion?',
-        'Are there any sources that contradict these findings?',
-        'How recent is this information?',
-        'Could the claim be interpreted differently in another context?',
-      ];
+        // Build minimal response preserving frontend expectations
+        const defaultFollowUps = [
+          'What additional evidence could strengthen this conclusion?',
+          'Are there any sources that contradict these findings?',
+          'How recent is this information?',
+          'Could the claim be interpreted differently in another context?',
+        ];
 
-      const result = {
-        verdict: parsed.verdict || 'Unknown',
-        confidence: parsed.confidence || 0,
-        explanation: parsed.raw,
-        sources: [],
-        evidenceSnippets: [],
-        followUps: await generateFollowUps(primaryClaim, input?.context || '') || defaultFollowUps,
-        messageMarkdown: parsed.raw,
-        modelUsed: { vendor: 'huggingface', name: 'fakeverifier-app' },
-        cost: {},
-      };
+        const result = {
+          verdict: parsed.verdict || 'Unknown',
+          confidence: parsed.confidence || 0,
+          explanation: parsed.raw,
+          sources: [],
+          evidenceSnippets: [],
+          followUps: await generateFollowUps(primaryClaim, input?.context || '') || defaultFollowUps,
+          messageMarkdown: parsed.raw,
+          modelUsed: { vendor: 'huggingface', name: 'fakeverifier-app' },
+          cost: {},
+        };
 
-      return new Response(JSON.stringify(result), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
-      });
+        return new Response(JSON.stringify(result), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+        });
+      } catch (hfError: any) {
+        // If HuggingFace also fails, return a user-friendly error instead of hanging
+        logNetworkError(hfError, 'HuggingFace Fallback', 'verifyClaim');
+        return new Response(
+          JSON.stringify({ 
+            error: 'Service temporarily unavailable',
+            message: 'We encountered an issue processing your request. Please try again in a moment.',
+            modelUsed: { vendor: 'error', name: 'fallback-failed' }
+          }),
+          { status: 503, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
     }
+
+    // Safety fallback: if we somehow reach here without returning, return error
+    // This should never happen, but ensures we always return a response
+    return new Response(
+      JSON.stringify({ 
+        error: 'Internal routing error',
+        message: 'Unable to determine which model to use. Please try again.'
+      }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    );
   } catch (e: any) {
     return new Response(
       JSON.stringify({ error: e?.message || 'Internal server error' }),
