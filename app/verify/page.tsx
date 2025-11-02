@@ -731,6 +731,10 @@ function VerifyPage() {
         ? `\n\nRelevant memories about this user:\n${memories.map(m => `- ${m.content}`).join('\n')}`
         : '';
 
+      // Ensure model is explicitly set to OpenAI Agent Builder if not provided
+      const selectedModel = model || 'openai-agent-builder';
+      console.log('Sending verification request with model:', selectedModel);
+      
       const r = await fetch('/api/verify', { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
@@ -742,7 +746,7 @@ function VerifyPage() {
             context: recent + memoriesContext 
           },
           nocache: true,
-          model: model || 'openai-agent-builder',
+          model: selectedModel,
           imageBase64Array: imageBase64Array
         })
       });

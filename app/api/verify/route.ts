@@ -294,18 +294,34 @@ export async function POST(req: NextRequest) {
     const selectedModel = (model || 'openai-agent-builder').toString().toLowerCase();
     
     // OpenAI AgentBuilder is default for all plans (free, pro, enterprise)
+    // If OpenAI API key is missing, log warning but still attempt (it will fail gracefully and fallback)
+    if (!process.env.OPENAI_API_KEY) {
+      console.warn('OPENAI_API_KEY not configured - OpenAI Agent Builder will not be available');
+    }
+    
     const useOpenAI = (selectedModel === 'openai-agent-builder' || !model) && !!process.env.OPENAI_API_KEY;
     let openAISucceeded = false;
+    
+    // Debug logging
+    console.log('Model routing:', { 
+      providedModel: model, 
+      selectedModel, 
+      useOpenAI, 
+      hasOpenAIKey: !!process.env.OPENAI_API_KEY 
+    });
 
     if (useOpenAI) {
       // Declare timeoutId outside try block for cleanup in catch
       let timeoutId: NodeJS.Timeout | undefined;
       try {
-        // Add timeout wrapper for the OpenAI agent call (25s to avoid Vercel's 30s limit on free tier)
+        // Add timeout wrapper for the OpenAI agent call
+        // Set to 55s to give buffer before Vercel's 60s limit
+        // OpenAI Agent Builder with web search can take time, so we give it enough time to complete
+        const timeoutDuration = 55000; // 55 seconds (buffer before Vercel's 60s limit)
         const timeoutPromise = new Promise<never>((_, reject) => {
           timeoutId = setTimeout(() => {
-            reject(new Error('OpenAI Agent Builder request timed out after 25 seconds'));
-          }, 25000);
+            reject(new Error(`OpenAI Agent Builder request timed out after ${timeoutDuration / 1000} seconds`));
+          }, timeoutDuration);
         });
         
         const agentResponse = await Promise.race([
@@ -441,9 +457,15 @@ export async function POST(req: NextRequest) {
         // Clear timeout if it's still active
         if (typeof timeoutId !== 'undefined') clearTimeout(timeoutId);
         
-        // Log error for debugging
+        // Log error for debugging with more details
         logNetworkError(error, 'OpenAI Agent Builder', 'runWorkflow');
-        console.error('OpenAI Agent error:', error);
+        console.error('OpenAI Agent error:', {
+          message: error?.message,
+          name: error?.name,
+          stack: error?.stack,
+          selectedModel,
+          hasOpenAIKey: !!process.env.OPENAI_API_KEY
+        });
         openAISucceeded = false;
         // Always fallback to HuggingFace instead of returning error
         // This ensures free plan users and users with network issues get a response
