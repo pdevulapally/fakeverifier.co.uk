@@ -13,7 +13,6 @@ firebase-debug.log
 Thumbs.db
 
 # Local artifacts
-converted/
 
 # Model artifacts (keep off GitHub; use HF Hub or Git LFS)
 *.safetensors
@@ -21,6 +20,52 @@ converted/
 *.bin
 *.onnx
 fakeverifier-liar/
+
+# Training files and outputs
+train_llama_with_agent_instructions.py
+generate_llama_dataset.py
+verify_hf_access.py
+fix_dataset_labels.py
+requirements_training.txt
+TRAINING_LLAMA_GUIDE.md
+GET_LLAMA_ACCESS.md
+llama-finetuned-output/
+training_output/
+*.pth
+*.ckpt
+*.h5
+*.checkpoint/
+checkpoints/
+wandb/
+runs/
+logs/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Hugging Face cache
+.cache/
+.huggingface/
+transformers_cache/
+datasets_cache/
+
+# Training datasets (local)
+*.parquet
+*.arrow
+converted/
+*.jsonl
+*.csv
 
 # Editors
 .vscode/

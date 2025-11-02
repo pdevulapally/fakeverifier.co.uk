@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import {
   Search,
   Plus,
@@ -23,7 +24,12 @@ import {
   AlertTriangle,
   X,
   Lock,
-  Globe
+  Globe,
+  HelpCircle,
+  Sparkles,
+  Link2,
+  Eye,
+  Shield
 } from 'lucide-react';
 import { AI_Prompt } from '@/components/ui/animated-ai-input';
 import { TimelineFeed, type TimelineEvent } from '@/components/TimelineFeed';
@@ -2066,14 +2072,13 @@ function VerifyPage() {
 
             {/* Info link */}
             <div className="mb-4">
-              <a 
-                href="#" 
-                className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
-                onClick={(e) => e.preventDefault()}
+              <Link
+                href="/sharing-guide"
+                className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1.5 transition-colors duration-200 hover:gap-2 group"
               >
-                <span className="text-xs">ⓘ</span>
-                How does sharing chats work?
-              </a>
+                <HelpCircle className="h-3.5 w-3.5 group-hover:scale-110 transition-transform" />
+                <span className="font-medium">How does sharing chats work?</span>
+              </Link>
             </div>
 
             <div className="flex gap-2 justify-end">
