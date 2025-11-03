@@ -674,8 +674,15 @@ function VerifyPage() {
         });
       }
 
-      // Build lightweight context from recent turns to help follow-ups
-      const recent = messages.slice(-6).map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n');
+      // Build detailed conversation context from recent turns to help follow-ups
+      // Include the last 10 messages (5 exchanges) for better context
+      const recentMessages = messages.slice(-10);
+      const recent = recentMessages.map((m, idx) => {
+        const roleLabel = m.role === 'user' ? 'USER' : 'ASSISTANT';
+        // Truncate very long messages to keep context manageable
+        const content = m.content.length > 500 ? m.content.substring(0, 500) + '...' : m.content;
+        return `${roleLabel}: ${content}`;
+      }).join('\n\n');
 
       // If user selected the Llama chat model, route to unified /api/chat
       if ((model || '').includes('llama')) {
