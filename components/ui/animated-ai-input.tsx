@@ -532,7 +532,7 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
   // Load user plan
   useEffect(() => {
     if (!user?.uid) return;
-    fetch(`/api/user-tokens?uid=${user.uid}&t=${Date.now()}`, { cache: "no-store" })
+    fetch(`/api/user-tokens?uid=${user.uid}&t=${Date.now()}&tz=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone)}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((j) => {
         setUserPlan(j.plan || "free");

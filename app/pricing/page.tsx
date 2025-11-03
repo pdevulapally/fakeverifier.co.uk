@@ -18,7 +18,7 @@ export default function PricingPage() {
       price: "$0",
       period: "/mo",
       cta: "Get started",
-      features: ["50 monthly credits", "10 verifications/day", "Up to 1 image per verification", "Basic sources", "Markdown report"],
+      features: ["100 monthly credits", "20 verifications/day", "Up to 1 image per verification", "Basic sources", "Markdown report"],
       style: { borderColor: "var(--border)", background: "linear-gradient(180deg, rgba(255,255,255,0.6), rgba(255,255,255,0.3))" },
       buttonStyle: { background: "var(--muted)", color: "var(--foreground)" },
     },
@@ -29,10 +29,10 @@ export default function PricingPage() {
       period: "/mo",
       cta: "Upgrade to Pro",
       blurb: "Great for power users",
-      tokens: "500 tokens per month",
+      tokens: "2,000 tokens per month",
       features: [
-        "500 verification tokens per month",
-        "50 verifications per day",
+        "2,000 verification tokens per month",
+        "200 verifications per day",
         "Up to 3 images per verification",
         "Premium AI models (GPT-4o, GPT-4 Turbo, GPT-4)",
         "Faster response time",
@@ -55,10 +55,10 @@ export default function PricingPage() {
       period: "/month",
       cta: "Contact sales",
       blurb: "For teams and organizations",
-      tokens: "5,000 tokens per month",
+      tokens: "Unlimited tokens",
       features: [
-        "5000 verification tokens per month",
-        "500 verifications per day",
+        "Unlimited verification tokens",
+        "Unlimited daily verifications",
         "Up to 10 images per verification",
         "Unlimited AI analysis with Claude-3.5-Sonnet & GPT-4o",
         "Instant response time",
@@ -158,7 +158,7 @@ export default function PricingPage() {
             <p className="mt-2 text-sm" style={{ color: "var(--muted-foreground)" }}>Production‑ready verification with transparent reasoning and enterprise‑grade controls.</p>
           </div>
           <div className="mt-8 grid gap-5 md:grid-cols-3">
-            {[{
+                {[{
               title: 'Real-time evidence',
               desc: 'Live news retrieval, source deduplication, and citation-rich output.',
               icon: <Zap className="h-5 w-5" style={{ color: 'var(--primary)' }} />
@@ -231,8 +231,8 @@ export default function PricingPage() {
               </thead>
               <tbody>
                 {[
-                  { k: 'Monthly tokens', free: '50', pro: '500', ent: '5,000' },
-                  { k: 'Daily verifications', free: '10', pro: '50', ent: '500' },
+                  { k: 'Monthly tokens', free: '100', pro: '2,000', ent: 'Unlimited' },
+                  { k: 'Daily verifications', free: '20', pro: '200', ent: 'Unlimited' },
                   { k: 'Images per verification', free: '1', pro: '3', ent: '10' },
                   { k: 'Live news integration', free: 'Basic', pro: 'Full', ent: 'Full + SLA' },
                   { k: 'Model quality', free: 'GPT-4o family', pro: 'GPT-4o family', ent: 'Claude-3.5-Sonnet + GPT-4o' },

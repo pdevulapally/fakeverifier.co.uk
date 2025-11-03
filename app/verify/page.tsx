@@ -46,7 +46,8 @@ function TokenCounters({ uid }: { uid?: string | null }) {
     let mounted = true;
     const load = async () => {
       try {
-        const r = await fetch(`/api/user-tokens?uid=${uid}&t=${Date.now()}`, { cache: 'no-store' });
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const r = await fetch(`/api/user-tokens?uid=${uid}&t=${Date.now()}&tz=${encodeURIComponent(tz)}`, { cache: 'no-store' });
         const j = await r.json();
         if (mounted && r.ok) setData({ daily: j.tokensDaily ?? 0, monthly: j.tokensMonthly ?? 0, plan: j.plan || 'free' });
       } catch {}
@@ -62,9 +63,9 @@ function TokenCounters({ uid }: { uid?: string | null }) {
   if (!data) return null;
 
   const planTotals: Record<string, { daily: number; monthly: number; color: string }> = {
-    free: { daily: 10, monthly: 50, color: '#9CA3AF' },
-    pro: { daily: 50, monthly: 500, color: 'var(--primary)' },
-    enterprise: { daily: 500, monthly: 5000, color: '#8B5CF6' },
+    free: { daily: 20, monthly: 100, color: '#9CA3AF' },
+    pro: { daily: 200, monthly: 2000, color: 'var(--primary)' },
+    enterprise: { daily: Number.MAX_SAFE_INTEGER, monthly: Number.MAX_SAFE_INTEGER, color: '#8B5CF6' },
   };
   const totals = planTotals[data.plan] || planTotals.free;
   const dailyUsed = Math.max(0, totals.daily - (data.daily || 0));
@@ -112,7 +113,8 @@ function InlineCredits({ uid }: { uid?: string | null }) {
     let mounted = true;
     (async () => {
       try {
-        const r = await fetch(`/api/user-tokens?uid=${uid}`);
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const r = await fetch(`/api/user-tokens?uid=${uid}&tz=${encodeURIComponent(tz)}`);
         const j = await r.json();
         if (mounted && r.ok) setData({ daily: j.tokensDaily ?? 0, monthly: j.tokensMonthly ?? 0, plan: j.plan || 'free' });
       } catch {}
@@ -807,35 +809,32 @@ function VerifyPage() {
           const div = document.createElement('div');
           div.className = 'fixed inset-0 z-50 flex items-center justify-center';
           div.innerHTML = `
-            <div class="absolute inset-0 bg-black/50 backdrop-blur-sm"></div>
-            <div class="relative z-10 w-full max-w-md rounded-2xl border bg-white p-6 shadow-xl">
-              <div class="text-center mb-4">
-                <div class="mx-auto w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center mb-3">
-                  <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
-                  </svg>
+            <div class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
+            <div class="relative z-10 w-full max-w-xl overflow-hidden rounded-3xl border shadow-2xl" style="background: var(--card); border-color: var(--border)">
+              <div class="px-8 py-12 text-center text-white" style="background: linear-gradient(135deg, var(--primary) 0%, #1e3a8a 100%)">
+                <button id="quota-cancel" class="absolute right-4 top-4 text-white/80 transition-colors hover:text-white" aria-label="Close">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 6L18 18M6 18L18 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                </button>
+                <div class="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-white/10 backdrop-blur-sm">
+                  <svg class="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
                 </div>
-                <h3 class="text-lg font-semibold mb-2" style="color: var(--foreground)">You've run out of tokens</h3>
-                <p class="text-sm mb-4" style="color: var(--muted-foreground)">Your plan (${j?.remaining?.plan || 'free'}) has reached its limit.</p>
-                <div class="bg-gray-50 rounded-lg p-3 mb-4">
-                  <div class="flex justify-between items-center mb-2">
-                    <span class="text-sm font-medium" style="color: var(--foreground)">Daily remaining:</span>
-                    <span class="text-lg font-bold ${(j?.remaining?.daily ?? 0) > 0 ? 'text-green-600' : 'text-red-500'}">${j?.remaining?.daily ?? 0}</span>
-                  </div>
-                  <div class="flex justify-between items-center">
-                    <span class="text-sm font-medium" style="color: var(--foreground)">Monthly remaining:</span>
-                    <span class="text-lg font-bold ${(j?.remaining?.monthly ?? 0) > 0 ? 'text-green-600' : 'text-red-500'}">${j?.remaining?.monthly ?? 0}</span>
-                  </div>
-                </div>
+                <h3 class="mb-2 text-3xl font-bold">You've reached your limit</h3>
+                <p class="text-lg text-white/90">Upgrade to continue</p>
               </div>
-              <div class="flex gap-2 justify-end">
-                <button id="quota-cancel" class="rounded-lg px-3 py-2 text-sm" style="background: var(--muted); color: var(--foreground)">Close</button>
-                <button id="quota-upgrade" class="rounded-lg px-3 py-2 text-sm font-medium" style="background: var(--primary); color: var(--primary-foreground)">Upgrade plan</button>
+              <div class="px-8 py-8">
+                <div class="mb-6 rounded-2xl border p-4" style="background: var(--muted); border-color: var(--border)">
+                  <p class="text-sm" style="color: var(--muted-foreground)">Your ${j?.remaining?.plan || 'free'} plan has reached its token limit.</p>
+                </div>
+                <div class="flex flex-col gap-3 sm:flex-row">
+                  <button id="quota-upgrade" class="flex-1 rounded-xl px-6 py-4 font-semibold text-white shadow-lg transition-all hover:shadow-xl" style="background: var(--primary)">Upgrade plan</button>
+                  <button id="quota-cancel-2" class="rounded-xl border-2 px-6 py-4 font-semibold transition-colors" style="border-color: var(--border); color: var(--foreground)">Maybe later</button>
+                </div>
               </div>
             </div>`;
           document.body.appendChild(div);
           const close = () => div.remove();
           div.querySelector('#quota-cancel')?.addEventListener('click', close);
+          div.querySelector('#quota-cancel-2')?.addEventListener('click', close);
           div.querySelector('#quota-upgrade')?.addEventListener('click', () => { window.location.href = '/pricing'; });
         } else {
           setError(j.error || 'Verification failed');
@@ -1652,7 +1651,9 @@ function VerifyPage() {
                     <div className="py-1">
                       {/* Credit Balance block above Upgrade */}
                       <InlineCredits uid={user?.uid} />
-                      <button className="flex w-full items-center gap-3 px-3 py-2 text-sm text-purple-600 hover:bg-purple-50 rounded-md">
+                      <button 
+                        onClick={() => router.push('/pricing')}
+                        className="flex w-full items-center gap-3 px-3 py-2 text-sm text-purple-600 hover:bg-purple-50 rounded-md">
                         <Crown className="h-4 w-4" />
                         <span>Upgrade Plan</span>
                       </button>

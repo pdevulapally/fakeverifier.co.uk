@@ -238,7 +238,9 @@ export default function CardNav({
                     
                     {/* Menu Items */}
                     <div className="py-1">
-                      <button className="flex w-full items-center gap-3 px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-md">
+                      <button 
+                        onClick={() => window.location.href = '/pricing'}
+                        className="flex w-full items-center gap-3 px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-md">
                         <Crown className="h-4 w-4" />
                         <span>Upgrade Plan</span>
                       </button>

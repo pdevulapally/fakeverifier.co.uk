@@ -26,9 +26,9 @@ export async function POST(req: NextRequest) {
     
     // Compute explicit per-plan limits to persist for clients
     const planTotals: Record<'free' | 'pro' | 'enterprise', { daily: number; monthly: number }> = {
-      free: { daily: 10, monthly: 50 },
-      pro: { daily: 50, monthly: 500 },
-      enterprise: { daily: 500, monthly: 5000 },
+      free: { daily: 20, monthly: 100 },
+      pro: { daily: 200, monthly: 2000 },
+      enterprise: { daily: Number.MAX_SAFE_INTEGER, monthly: Number.MAX_SAFE_INTEGER },
     };
     const limits = planTotals[plan as 'free' | 'pro' | 'enterprise'] || planTotals.free;
 
