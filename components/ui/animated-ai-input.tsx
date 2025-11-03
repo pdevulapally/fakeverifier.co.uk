@@ -88,13 +88,13 @@ const MAX_FILES = 10;
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 const PASTE_THRESHOLD = 200; // characters threshold for showing as pasted content
 
-// Expose models based on plan: All plans get OpenAI Agent Builder + plan-specific models
+// Expose models based on plan: All plans get FakeVerifier (Web Search) + plan-specific models
 const getAvailableModels = (userPlan: string): ModelOption[] => {
   const baseModels = [
     {
       id: "openai-agent-builder",
-      name: "OpenAI Agent Builder",
-      description: "AI-powered fact-checking with web search and evidence",
+      name: "FakeVerifier (Web Search)",
+      description: "Fact-checking with live web search and cited evidence",
       badge: "Default",
     },
   ];
@@ -516,10 +516,10 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
   // Get available models based on user plan
   const availableModels = models || getAvailableModels(userPlan);
   
-  // Initialize with OpenAI Agent Builder as default
+  // Initialize with FakeVerifier (Web Search) as default
   const [selectedModel, setSelectedModel] = useState<string>(() => {
     if (defaultModel) return defaultModel;
-    // Always prefer OpenAI Agent Builder as default
+    // Always prefer FakeVerifier (Web Search) as default
     const initialModels = models || getAvailableModels("free"); // Use free as fallback for initial state
     const openAIModel = initialModels.find(m => m.id === "openai-agent-builder");
     if (openAIModel) return "openai-agent-builder";
@@ -542,13 +542,13 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
       });
   }, [user?.uid]);
 
-  // Ensure OpenAI Agent Builder is selected by default when models are first loaded
+  // Ensure FakeVerifier (Web Search) is selected by default when models are first loaded
   useEffect(() => {
     if (!defaultModel && availableModels.length > 0) {
       const openAIModel = availableModels.find(m => m.id === "openai-agent-builder");
       const isCurrentModelValid = availableModels.some(m => m.id === selectedModel);
       
-      // If OpenAI Agent Builder is available and current model is invalid or not set, default to OpenAI
+      // If FakeVerifier (Web Search) is available and current model is invalid or not set, default to it
       if (openAIModel && (!isCurrentModelValid || selectedModel !== "openai-agent-builder")) {
         // Only auto-switch if the current model is invalid, otherwise respect user's choice
         if (!isCurrentModelValid) {
@@ -563,7 +563,7 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
   useEffect(() => {
     const newModels = getAvailableModels(userPlan);
     
-    // If current selected model is not in the new available models, switch to OpenAI Agent Builder (default)
+    // If current selected model is not in the new available models, switch to FakeVerifier (Web Search) (default)
     const isCurrentModelAvailable = newModels.some(m => m.id === selectedModel);
     if (newModels.length > 0 && !isCurrentModelAvailable) {
       const openAIModel = newModels.find(m => m.id === "openai-agent-builder");

@@ -21,14 +21,14 @@ const footerLinks: FooterSection[] = [
 		links: [
 			{ title: 'Verify', href: '/verify' },
 			{ title: 'Pricing', href: '/pricing' },
-			{ title: 'How it works', href: '/#how-it-works' },
-			{ title: 'Plans', href: '/#plans' },
+			{ title: 'How it works', href: '/how-it-works' },
+			{ title: 'Plans', href: '/pricing' },
 		],
 	},
 	{
 		label: 'Company',
 		links: [
-			{ title: 'About', href: '/#about' },
+			{ title: 'About', href: '/about' },
 			{ title: 'Contact', href: '/contact' },
 			{ title: 'Privacy Policy', href: '/privacy' },
 			{ title: 'Terms of Service', href: '/terms' },

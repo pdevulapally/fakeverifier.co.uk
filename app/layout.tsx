@@ -15,8 +15,8 @@ const items = [
     textColor: 'var(--primary-foreground)',
     links: [
       { label: 'Verify', ariaLabel: 'Open verification tool', href: '/verify' },
-      { label: 'How it works', ariaLabel: 'How FakeVerifier works', href: '/#how-it-works' },
-      { label: 'Plans', ariaLabel: 'View pricing plans', href: '/#plans' },
+      { label: 'How it works', ariaLabel: 'How FakeVerifier works', href: '/how-it-works' },
+      { label: 'Plans', ariaLabel: 'View pricing plans', href: '/pricing' },
     ],
   },
   {
@@ -34,7 +34,7 @@ const items = [
     bgColor: 'var(--accent)',
     textColor: 'var(--accent-foreground)',
     links: [
-      { label: 'About', ariaLabel: 'About FakeVerifier', href: '/#about' },
+      { label: 'About', ariaLabel: 'About FakeVerifier', href: '/about' },
       { label: 'Contact', ariaLabel: 'Contact us', href: '/contact' },
     ],
   },

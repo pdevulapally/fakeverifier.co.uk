@@ -638,7 +638,7 @@ function VerifyPage() {
     setEditingTitle('');
   }
 
-  async function onVerify(inputText: string, model?: string, imageFiles?: File[]) {
+  async function onVerify(inputText: string, model?: string, imageFiles?: File[], regenerate?: boolean) {
     if (!inputText.trim()) return;
     
     setLoading(true);
@@ -651,19 +651,20 @@ function VerifyPage() {
       targetConversationId = await createNewConversation();
     }
     
-    // Add user message
+    // Add user message unless regenerating
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
       content: inputText,
       timestamp: new Date()
     };
-    
-    setMessages(prev => [...prev, userMessage]);
+    if (!regenerate) {
+      setMessages(prev => [...prev, userMessage]);
+    }
     
     try {
-      // Save user message to conversation
-      if (targetConversationId && user) {
+      // Save user message to conversation unless regenerating
+      if (!regenerate && targetConversationId && user) {
         await fetch(`/api/conversations/${targetConversationId}/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -753,30 +754,50 @@ function VerifyPage() {
       const j = await r.json();
       
       if (r.ok) {
+        // find last assistant index for regenerate
+        const lastAssistantIndex = [...messages].map((m, idx) => ({m, idx})).reverse().find(x => x.m.role === 'assistant')?.idx;
         const assistantMessage: Message = {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
           content: (j.messageMarkdown as string) || `**Verdict:** ${j.verdict}\n**Confidence:** ${j.confidence}%\n\n**Why:**\n${j.explanation}`,
           timestamp: new Date()
         };
-        setMessages(prev => [...prev, assistantMessage]);
+        if (regenerate && lastAssistantIndex !== undefined) {
+          setMessages(prev => prev.map((m, idx) => idx === lastAssistantIndex ? { ...assistantMessage, id: m.id } : m));
+        } else {
+          setMessages(prev => [...prev, assistantMessage]);
+        }
         
         // Process auto-memories after AI response
         await processAutoMemories(inputText, assistantMessage.content);
         
         // Save assistant message to conversation
         if (targetConversationId && user) {
-          await fetch(`/api/conversations/${targetConversationId}/messages`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              uid: user.uid,
-              message: assistantMessage
-            })
-          });
-        // Refresh conversations to pick up any auto-updated title
-        await loadConversations();
-      }
+          if (regenerate && lastAssistantIndex !== undefined) {
+            // Update last assistant message in DB
+            const lastAssistant = [...messages][lastAssistantIndex];
+            await fetch(`/api/conversations/${targetConversationId}/messages`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                uid: user.uid,
+                messageId: lastAssistant.id,
+                content: assistantMessage.content
+              })
+            });
+          } else {
+            await fetch(`/api/conversations/${targetConversationId}/messages`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                uid: user.uid,
+                message: assistantMessage
+              })
+            });
+          }
+          // Refresh conversations to pick up any auto-updated title
+          await loadConversations();
+        }
       
       // Clear timeline when verification completes
       setTimeline([]);
@@ -959,7 +980,7 @@ function VerifyPage() {
     if (!messages.length) return;
     const lastUser = [...messages].reverse().find(m => m.role === 'user');
     if (!lastUser) return;
-    await onVerify(lastUser.content);
+    await onVerify(lastUser.content, undefined, undefined, true);
   }
 
   // Edit message functions
@@ -1000,8 +1021,8 @@ function VerifyPage() {
       }
     }
 
-    // Regenerate response with the edited content
-    await onVerify(editingContent.trim());
+    // Regenerate response with the edited content (replace last assistant)
+    await onVerify(editingContent.trim(), undefined, undefined, true);
     
     // Clear editing state
     cancelMessageEditing();
