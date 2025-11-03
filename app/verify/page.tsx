@@ -809,25 +809,25 @@ function VerifyPage() {
           const div = document.createElement('div');
           div.className = 'fixed inset-0 z-50 flex items-center justify-center';
           div.innerHTML = `
-            <div class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
-            <div class="relative z-10 w-full max-w-xl overflow-hidden rounded-3xl border shadow-2xl" style="background: var(--card); border-color: var(--border)">
+            <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+            <div class="relative z-10 w-full max-w-xl overflow-hidden rounded-3xl border shadow-[0_20px_60px_-12px_rgba(0,0,0,0.25),0_0_0_1px_rgba(255,255,255,0.05)_inset]" style="background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%); border-color: color-mix(in oklab, var(--border) 50%, transparent); backdrop-filter: blur(16px) saturate(180%)">
               <div class="px-8 py-12 text-center text-white" style="background: linear-gradient(135deg, var(--primary) 0%, #1e3a8a 100%)">
                 <button id="quota-cancel" class="absolute right-4 top-4 text-white/80 transition-colors hover:text-white" aria-label="Close">
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 6L18 18M6 18L18 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
                 </button>
-                <div class="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-white/10 backdrop-blur-sm">
+                <div class="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-white/10 backdrop-blur-sm shadow-lg">
                   <svg class="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
                 </div>
                 <h3 class="mb-2 text-3xl font-bold">You've reached your limit</h3>
                 <p class="text-lg text-white/90">Upgrade to continue</p>
               </div>
-              <div class="px-8 py-8">
-                <div class="mb-6 rounded-2xl border p-4" style="background: var(--muted); border-color: var(--border)">
-                  <p class="text-sm" style="color: var(--muted-foreground)">Your ${j?.remaining?.plan || 'free'} plan has reached its token limit.</p>
+              <div class="px-8 py-8" style="background: #ffffff">
+                <div class="mb-6 rounded-2xl border p-4 shadow-sm" style="background: #ffffff; border-color: var(--border)">
+                  <p class="text-sm" style="color: var(--muted-foreground)">Your ${j?.remaining?.plan || 'free'} plan has reached its token limit. Daily tokens reset at 12:00 AM local time.</p>
                 </div>
                 <div class="flex flex-col gap-3 sm:flex-row">
-                  <button id="quota-upgrade" class="flex-1 rounded-xl px-6 py-4 font-semibold text-white shadow-lg transition-all hover:shadow-xl" style="background: var(--primary)">Upgrade plan</button>
-                  <button id="quota-cancel-2" class="rounded-xl border-2 px-6 py-4 font-semibold transition-colors" style="border-color: var(--border); color: var(--foreground)">Maybe later</button>
+                  <button id="quota-upgrade" class="flex-1 rounded-xl px-6 py-4 font-semibold text-white shadow-lg transition-all hover:shadow-xl hover:scale-[1.02]" style="background: var(--primary)">Upgrade plan</button>
+                  <button id="quota-cancel-2" class="rounded-xl border-2 px-6 py-4 font-semibold transition-all hover:scale-[1.02]" style="border-color: var(--border); color: var(--foreground)">Maybe later</button>
                 </div>
               </div>
             </div>`;
