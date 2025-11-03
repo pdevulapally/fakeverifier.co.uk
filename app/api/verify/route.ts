@@ -106,53 +106,6 @@ function confidenceLabel(score: number): string {
   return 'Low';
 }
 
-// 🔹 Remove markdown formatting from text (especially **bold**, *italic*, etc.)
-function stripMarkdown(text: string): string {
-  if (!text) return text;
-  let cleaned = text;
-  
-  // Remove code blocks first (they may contain markdown-like syntax)
-  cleaned = cleaned.replace(/```[\s\S]*?```/g, '');
-  
-  // Remove inline code `code` -> code
-  cleaned = cleaned.replace(/`([^`]+)`/g, '$1');
-  
-  // Remove links but keep text [text](url) -> text
-  cleaned = cleaned.replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1');
-  
-  // Remove bold markdown __text__ (do underscores first)
-  cleaned = cleaned.replace(/__([^_]+)__/g, '$1');
-  
-  // Remove bold markdown **text**
-  // Run multiple times to handle nested or adjacent cases
-  let prev = '';
-  while (cleaned !== prev) {
-    prev = cleaned;
-    cleaned = cleaned.replace(/\*\*([^*]+)\*\*/g, '$1');
-  }
-  
-  // Remove italic markdown *text* (but only if not part of **)
-  cleaned = cleaned.replace(/\*([^*]+)\*/g, '$1');
-  
-  // Remove italic markdown _text_ (but only if not part of __)
-  cleaned = cleaned.replace(/_([^_]+)_/g, '$1');
-  
-  // Remove headers # Header -> Header
-  cleaned = cleaned.replace(/^#{1,6}\s+(.+)$/gm, '$1');
-  
-  // Remove strikethrough ~~text~~
-  cleaned = cleaned.replace(/~~([^~]+)~~/g, '$1');
-  
-  // Remove list markers - * or - or 1. at start of line
-  cleaned = cleaned.replace(/^[\s]*[-*•]\s+/gm, '');
-  cleaned = cleaned.replace(/^\d+\.\s+/gm, '');
-  
-  // Clean up extra whitespace
-  cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
-  
-  return cleaned;
-}
-
 // 🔹 Build markdown output for frontend
 function formatFactCheckMarkdown({
   verdict,
@@ -371,14 +324,8 @@ export async function POST(req: NextRequest) {
           }, timeoutDuration);
         });
         
-        // Build conversation context from previous messages if available
-        const conversationContext = context ? `Previous conversation:\n${context}` : '';
-        
         const agentResponse = await Promise.race([
-          runWorkflow({ 
-            input_as_text: input.raw,
-            conversation_history: conversationContext
-          }),
+          runWorkflow({ input_as_text: input.raw }),
           timeoutPromise
         ]) as any;
         
@@ -444,11 +391,9 @@ export async function POST(req: NextRequest) {
             });
           }
 
-          // Remove markdown formatting from OpenAI's explanation
-          const rawExplanation = parsedOutput.explanation || 'No explanation provided.';
-          const explanation = stripMarkdown(rawExplanation);
+          const explanation = parsedOutput.explanation || 'No explanation provided.';
 
-          // Build markdown response (formatFactCheckMarkdown will add its own formatting)
+          // Build markdown response
           const markdown = formatFactCheckMarkdown({
             verdict,
             confidence,
@@ -466,7 +411,7 @@ export async function POST(req: NextRequest) {
           const result = {
             verdict,
             confidence,
-            explanation, // Clean explanation without markdown
+            explanation,
             sources: sources.map(s => ({ title: s.title || s.url, link: s.url })),
             evidenceSnippets: [],
             followUps: [
@@ -487,16 +432,13 @@ export async function POST(req: NextRequest) {
           });
         } else {
           // Conversational/general response
-          const rawExplanation = parsedOutput.explanation || parsedOutput.output_text || 
+          const explanation = parsedOutput.explanation || parsedOutput.output_text || 
             (typeof agentResponse.output_parsed === 'string' ? agentResponse.output_parsed : JSON.stringify(agentResponse.output_parsed));
-          
-          // Remove markdown formatting from conversational responses
-          const explanation = stripMarkdown(rawExplanation);
           
           const result = {
             verdict: 'Conversational',
             confidence: 100,
-            explanation: explanation, // Clean explanation without markdown
+            explanation: explanation,
             messageMarkdown: explanation,
             sources: [],
             evidenceSnippets: [],
