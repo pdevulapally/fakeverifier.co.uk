@@ -38,7 +38,7 @@ export default function PrivacyPage() {
               For the purposes of UK GDPR and EU GDPR, FakeVerifier is the data controller responsible for your personal data. Our contact information is:
             </p>
             <div className="bg-gray-50 p-4 rounded-lg mt-4">
-              <p className="text-gray-700"><strong>Email:</strong> <a href="mailto:privacy@fakeverifier.co.uk" className="text-blue-600 hover:underline">privacy@fakeverifier.co.uk</a></p>
+              <p className="text-gray-700"><strong>Email:</strong> <a href="mailto:PreethamDevulapally@gmail.com" className="text-blue-600 hover:underline">PreethamDevulapally@gmail.com</a></p>
               <p className="text-gray-700 mt-2"><strong>Website:</strong> <a href="/contact" className="text-blue-600 hover:underline">Contact Us</a></p>
             </div>
           </section>
@@ -271,7 +271,7 @@ export default function PrivacyPage() {
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-6">
               <p className="text-blue-900 font-semibold mb-2">How to Exercise Your Rights</p>
               <p className="text-blue-800 text-sm">
-                To exercise any of these rights, please contact us at <a href="mailto:privacy@fakeverifier.co.uk" className="underline">privacy@fakeverifier.co.uk</a>. We will respond to your request within one month (or two months for complex requests) as required by GDPR.
+                To exercise any of these rights, please contact us at <a href="mailto:PreethamDevulapally@gmail.com" className="underline">PreethamDevulapally@gmail.com</a>. We will respond to your request within one month (or two months for complex requests) as required by GDPR.
               </p>
             </div>
           </section>
@@ -320,8 +320,7 @@ export default function PrivacyPage() {
               If you have any questions, concerns, or requests regarding this Privacy Policy or our data practices, please contact us:
             </p>
             <div className="bg-gray-50 p-4 rounded-lg mt-4">
-              <p className="text-gray-700"><strong>Email:</strong> <a href="mailto:privacy@fakeverifier.co.uk" className="text-blue-600 hover:underline">privacy@fakeverifier.co.uk</a></p>
-              <p className="text-gray-700 mt-2"><strong>Data Protection Officer:</strong> <a href="mailto:dpo@fakeverifier.co.uk" className="text-blue-600 hover:underline">dpo@fakeverifier.co.uk</a></p>
+              <p className="text-gray-700"><strong>Email:</strong> <a href="mailto:PreethamDevulapally@gmail.com" className="text-blue-600 hover:underline">PreethamDevulapally@gmail.com</a></p>
               <p className="text-gray-700 mt-2"><strong>Website:</strong> <a href="/contact" className="text-blue-600 hover:underline">Contact Us</a></p>
             </div>
             <p className="text-gray-700 leading-relaxed mt-4">

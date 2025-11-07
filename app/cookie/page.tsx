@@ -167,7 +167,7 @@ export default function CookiePage() {
               <li>Request deletion of cookie data</li>
             </ul>
             <p className="text-gray-700 leading-relaxed mt-4">
-              You can exercise these rights at any time through our cookie preferences or by contacting us at <a href="mailto:privacy@fakeverifier.co.uk" className="text-blue-600 hover:underline">privacy@fakeverifier.co.uk</a>.
+              You can exercise these rights at any time through our cookie preferences or by contacting us at <a href="mailto:PreethamDevulapally@gmail.com" className="text-blue-600 hover:underline">PreethamDevulapally@gmail.com</a>.
             </p>
           </section>
 
@@ -192,7 +192,7 @@ export default function CookiePage() {
               If you have any questions about this Cookie Policy or our use of cookies, please contact us:
             </p>
             <div className="bg-gray-50 p-4 rounded-lg mt-4">
-              <p className="text-gray-700"><strong>Email:</strong> <a href="mailto:privacy@fakeverifier.co.uk" className="text-blue-600 hover:underline">privacy@fakeverifier.co.uk</a></p>
+              <p className="text-gray-700"><strong>Email:</strong> <a href="mailto:PreethamDevulapally@gmail.com" className="text-blue-600 hover:underline">PreethamDevulapally@gmail.com</a></p>
               <p className="text-gray-700 mt-2"><strong>Website:</strong> <a href="/contact" className="text-blue-600 hover:underline">Contact Us</a></p>
             </div>
           </section>
