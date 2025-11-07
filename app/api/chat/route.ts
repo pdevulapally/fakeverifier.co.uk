@@ -158,9 +158,11 @@ export async function POST(req: NextRequest) {
 
     let plan = await getUserPlan((userId || '').toString());
     const isAnonymous = !userId || userId === 'demo' || userId === '';
-    const isLlamaModel = (model || '').toString().includes('llama');
+    const modelId = (model || '').toString();
+    // Check if it's a Llama/chat model (includes all chat models: llama-hf, llama-4-maverick, gpt-oss-20b)
+    const isLlamaModel = modelId.includes('llama') || modelId.includes('gpt-oss') || modelId.includes('maverick');
     
-    // Track anonymous chat usage for Llama models
+    // Track anonymous chat usage for chat models (OpenRouter models)
     let anonymousChatCount = 0;
     let newAnonymousCount = 0;
     if (isAnonymous && isLlamaModel) {
@@ -170,7 +172,7 @@ export async function POST(req: NextRequest) {
       if (anonymousChatCount >= ANONYMOUS_LIMIT) {
         return new Response(JSON.stringify({ 
           error: 'limit_reached',
-          message: 'You\'ve reached the free chat limit. Please sign in to continue using Llama 3.1.',
+          message: 'You\'ve reached the free chat limit. Please sign in to continue using chat models.',
           remaining: 0
         }), { 
           status: 429,
@@ -188,7 +190,12 @@ export async function POST(req: NextRequest) {
       plan = 'pro';
     } else if (isLlamaModel && !isAnonymous) {
       // Logged-in users: honor Llama model selection regardless of plan
-      plan = 'pro';
+      // Free plan users can use Llama 4 Maverick (OpenRouter models)
+      if (modelId.includes('maverick') || modelId.includes('gpt-oss')) {
+        plan = 'pro'; // Allow OpenRouter models for all logged-in users
+      } else {
+        plan = 'pro'; // HF models require pro/enterprise
+      }
     }
 
     if (plan === 'free' && !isLlamaModel) {
@@ -217,7 +224,8 @@ export async function POST(req: NextRequest) {
     const userMems = await getUserMemories((userId || '').toString());
     const memText = userMems.length ? `\n\nKnown user profile and preferences:\n${userMems.map(m => `- ${m}`).join('\n')}` : '';
     const msgs = buildProMessages(text + memText, evidence, Array.isArray(history) ? history : [], pref);
-    let reply = await withRetry(() => callLlamaChat(msgs));
+    // Pass the model ID to route to correct provider (modelId already declared above)
+    let reply = await withRetry(() => callLlamaChat(msgs, modelId));
     if (needsEvidence) reply = sanitizeReplyWithEvidence(reply, evidence);
     // fire-and-forget auto-memories
     saveAutoMemories((userId || '').toString(), text, reply);

@@ -91,15 +91,23 @@ const PASTE_THRESHOLD = 200; // characters threshold for showing as pasted conte
 // Expose models based on plan: All plans get FakeVerifier (Web Search) + plan-specific models
 // Anonymous users only get Llama 3.1
 const getAvailableModels = (userPlan: string, isAnonymous: boolean = false): ModelOption[] => {
-  // Anonymous users only get Llama 3.1
+  // Anonymous users get OpenRouter models only
+  // Llama 4 Maverick is default (first in list)
   if (isAnonymous) {
     return [
       {
-        id: "llama-hf-router",
-        name: "Llama 3.1 (Chat)",
-        description: "Conversational multilingual reasoning with evidence",
+        id: "llama-4-maverick-or",
+        name: "Llama 4 Maverick",
+        description: "Advanced conversational AI (Meta)",
         badge: "Free",
         logo: "/Images/Meta_Platforms_logo.svg",
+      },
+      {
+        id: "gpt-oss-20b-or",
+        name: "GPT-OSS-20B (Chat)",
+        description: "Open-source GPT model (OpenAI)",
+        badge: "Free",
+        logo: "/Images/OpenAI_logo_2025_(symbol).svg",
       },
     ];
   }
@@ -123,14 +131,22 @@ const getAvailableModels = (userPlan: string, isAnonymous: boolean = false): Mod
         badge: "Fast",
       },
       {
-        id: "llama-hf-router",
-        name: "Llama 3.1 (Chat)",
-        description: "Conversational multilingual reasoning with evidence",
-        badge: userPlan === "enterprise" ? "Enterprise" : "Pro",
+        id: "llama-4-maverick-or",
+        name: "Llama 4 Maverick",
+        description: "Advanced conversational AI via OpenRouter",
+        badge: "Free",
         logo: "/Images/Meta_Platforms_logo.svg",
+      },
+      {
+        id: "gpt-oss-20b-or",
+        name: "GPT-OSS-20B",
+        description: "Open-source GPT model via OpenRouter",
+        badge: "Free",
+        logo: "/Images/openrouter-color.svg",
       },
     ];
   }
+  // Free plan users get Llama 4 Maverick as an option
   return [
     ...baseModels,
     {
@@ -138,6 +154,13 @@ const getAvailableModels = (userPlan: string, isAnonymous: boolean = false): Mod
       name: "FakeVerifier (Classifier)",
       description: "Short factual verdicts with confidence",
       badge: "Fast",
+    },
+    {
+      id: "llama-4-maverick-or",
+      name: "Llama 4 Maverick",
+      description: "Advanced conversational AI via OpenRouter",
+      badge: "Free",
+      logo: "/Images/Meta_Platforms_logo.svg",
     },
   ];
 };
@@ -533,19 +556,26 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
   // Get available models based on user plan and anonymous status
   const availableModels = models || getAvailableModels(userPlan, isAnonymous);
   
-  // Initialize model selection - Llama 3.1 for anonymous, FakeVerifier for logged-in
+  // Initialize model selection - Llama 4 Maverick for anonymous/free, FakeVerifier for pro/enterprise
   const [selectedModel, setSelectedModel] = useState<string>(() => {
     if (defaultModel) return defaultModel;
     const initialModels = models || getAvailableModels(isAnonymous ? "free" : "free", isAnonymous);
-    // For anonymous users, default to Llama 3.1
+    // For anonymous users, default to Llama 4 Maverick
     if (isAnonymous) {
-      const llamaModel = initialModels.find(m => m.id === "llama-hf-router");
-      if (llamaModel) return "llama-hf-router";
+      const maverickModel = initialModels.find(m => m.id === "llama-4-maverick-or");
+      if (maverickModel) return "llama-4-maverick-or";
+      // Fallback to first available model
+      return initialModels[0]?.id || "llama-4-maverick-or";
     }
-    // For logged-in users, prefer FakeVerifier (Web Search)
+    // For logged-in free users, prefer Llama 4 Maverick, otherwise FakeVerifier (Web Search)
+    if (userPlan === "free") {
+      const maverickModel = initialModels.find(m => m.id === "llama-4-maverick-or");
+      if (maverickModel) return "llama-4-maverick-or";
+    }
+    // For pro/enterprise, prefer FakeVerifier (Web Search)
     const openAIModel = initialModels.find(m => m.id === "openai-agent-builder");
     if (openAIModel) return "openai-agent-builder";
-    return initialModels[0]?.id || (isAnonymous ? "llama-hf-router" : "openai-agent-builder");
+    return initialModels[0]?.id || "openai-agent-builder";
   });
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -566,28 +596,44 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
 
   // Ensure correct model is selected by default when models are first loaded
   useEffect(() => {
-    if (!defaultModel && availableModels.length > 0) {
+    if (availableModels.length > 0) {
       const isCurrentModelValid = availableModels.some(m => m.id === selectedModel);
       
-      if (!isCurrentModelValid) {
-        // For anonymous users, default to Llama 3.1
+      if (!isCurrentModelValid || !selectedModel) {
+        // For anonymous users, default to Llama 4 Maverick
         if (isAnonymous) {
-          const llamaModel = availableModels.find(m => m.id === "llama-hf-router");
-          if (llamaModel) {
-            setSelectedModel("llama-hf-router");
-            onModelChange?.("llama-hf-router");
+          const maverickModel = availableModels.find(m => m.id === "llama-4-maverick-or");
+          if (maverickModel) {
+            setSelectedModel("llama-4-maverick-or");
+            onModelChange?.("llama-4-maverick-or");
+          } else if (availableModels.length > 0) {
+            // Fallback to first available model
+            setSelectedModel(availableModels[0].id);
+            onModelChange?.(availableModels[0].id);
           }
         } else {
-          // For logged-in users, default to FakeVerifier (Web Search)
+          // For logged-in free users, prefer Llama 4 Maverick
+          if (userPlan === "free") {
+            const maverickModel = availableModels.find(m => m.id === "llama-4-maverick-or");
+            if (maverickModel) {
+              setSelectedModel("llama-4-maverick-or");
+              onModelChange?.("llama-4-maverick-or");
+              return;
+            }
+          }
+          // For pro/enterprise, default to FakeVerifier (Web Search)
           const openAIModel = availableModels.find(m => m.id === "openai-agent-builder");
           if (openAIModel) {
             setSelectedModel("openai-agent-builder");
             onModelChange?.("openai-agent-builder");
+          } else if (availableModels.length > 0) {
+            setSelectedModel(availableModels[0].id);
+            onModelChange?.(availableModels[0].id);
           }
         }
       }
     }
-  }, [availableModels.length, defaultModel, isAnonymous]); // Only run when models change, not on every render
+  }, [availableModels.length, defaultModel, isAnonymous, userPlan, selectedModel, onModelChange]); // Run when models or state changes
 
   // Update selected model when user plan or anonymous status changes
   useEffect(() => {
@@ -598,13 +644,24 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
     if (newModels.length > 0 && !isCurrentModelAvailable) {
       let preferred: string;
       if (isAnonymous) {
-        // For anonymous users, prefer Llama 3.1
-        const llamaModel = newModels.find(m => m.id === "llama-hf-router");
-        preferred = llamaModel ? "llama-hf-router" : (newModels[0]?.id || "llama-hf-router");
+        // For anonymous users, prefer Llama 4 Maverick
+        const maverickModel = newModels.find(m => m.id === "llama-4-maverick-or");
+        preferred = maverickModel ? "llama-4-maverick-or" : (newModels[0]?.id || "llama-4-maverick-or");
       } else {
-        // For logged-in users, prefer FakeVerifier (Web Search)
-        const openAIModel = newModels.find(m => m.id === "openai-agent-builder");
-        preferred = openAIModel ? "openai-agent-builder" : (newModels[0]?.id || "openai-agent-builder");
+        // For logged-in free users, prefer Llama 4 Maverick
+        if (userPlan === "free") {
+          const maverickModel = newModels.find(m => m.id === "llama-4-maverick-or");
+          if (maverickModel) {
+            preferred = "llama-4-maverick-or";
+          } else {
+            const openAIModel = newModels.find(m => m.id === "openai-agent-builder");
+            preferred = openAIModel ? "openai-agent-builder" : (newModels[0]?.id || "openai-agent-builder");
+          }
+        } else {
+          // For pro/enterprise, prefer FakeVerifier (Web Search)
+          const openAIModel = newModels.find(m => m.id === "openai-agent-builder");
+          preferred = openAIModel ? "openai-agent-builder" : (newModels[0]?.id || "openai-agent-builder");
+        }
       }
       setSelectedModel(preferred);
       onModelChange?.(preferred);
@@ -847,14 +904,22 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
     if (
       disabled ||
       (!message.trim() && files.length === 0 && pastedContent.length === 0)
-    )
+    ) {
+      console.log('[handleSend] Blocked: disabled=', disabled, 'hasContent=', message.trim() || files.length > 0 || pastedContent.length > 0);
       return;
+    }
     if (files.some((f) => f.uploadStatus === "uploading")) {
       alert("Please wait for all files to finish uploading.");
       return;
     }
 
-    onSendMessage?.(message, files, pastedContent, selectedModel);
+    // Ensure we have a valid model selected
+    const modelToUse = selectedModel || (isAnonymous ? "llama-4-maverick-or" : "openai-agent-builder");
+    if (!onSendMessage) {
+      return;
+    }
+    
+    onSendMessage(message, files, pastedContent, modelToUse);
 
     setMessage("");
     files.forEach((file) => {
@@ -863,7 +928,7 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
     setFiles([]);
     setPastedContent([]);
     if (textareaRef.current) textareaRef.current.style.height = "auto";
-  }, [message, files, pastedContent, disabled, onSendMessage]);
+  }, [message, files, pastedContent, disabled, onSendMessage, selectedModel, isAnonymous]);
 
   const handleModelChangeInternal = useCallback(
     (modelId: string) => {
@@ -891,10 +956,6 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
     !files.some((f) => f.uploadStatus === "uploading") &&
     !uploading;
 
-  // Debug logging
-  useEffect(() => {
-    console.log('Debug - canSend:', canSend, 'hasContent:', hasContent, 'message:', message.trim(), 'disabled:', disabled, 'uploading:', uploading);
-  }, [canSend, hasContent, message, disabled, uploading]);
 
   return (
     <div
@@ -1091,15 +1152,31 @@ export function AI_Prompt({
     pastedContent: PastedContent[],
     modelId: string
   ) => {
+    if (!onSend) {
+      return;
+    }
+    
     // Convert files to the old format for backward compatibility
     const imageFiles = files
       .filter(f => f.file.type.startsWith('image/'))
       .map(f => f.file);
     
     // Call the original onSend function with the chosen model
-    // For anonymous users, default to Llama 3.1 if no model specified
-    const defaultModel = isAnonymous ? "llama-hf-router" : "openai-agent-builder";
-    onSend?.(message, modelId || defaultModel, imageFiles);
+    // For anonymous/free users, default to Llama 4 Maverick if no model specified
+    const defaultModel = isAnonymous || userPlan === "free" ? "llama-4-maverick-or" : "openai-agent-builder";
+    const finalModel = modelId || defaultModel;
+    
+    try {
+      const result = onSend(message, finalModel, imageFiles);
+      const isPromise = result !== undefined && result !== null && typeof result === 'object' && 'then' in result && typeof (result as any).then === 'function';
+      if (isPromise && result) {
+        (result as Promise<any>).catch((err: any) => {
+          // Silently handle promise rejections - they're handled by onVerify
+        });
+      }
+    } catch (error) {
+      // Silently handle errors - they're handled by onVerify
+    }
   };
 
   return (

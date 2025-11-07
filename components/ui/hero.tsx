@@ -26,10 +26,20 @@ export default function ShaderHero() {
   const handleVerify = (inputText: string, model?: string, imageFiles?: File[]) => {
     if (!inputText.trim()) return;
     
+    // Check if we're already on the verify page
+    if (typeof window !== 'undefined' && window.location.pathname === '/verify') {
+      // If already on verify page, dispatch a custom event to trigger onVerify
+      const event = new CustomEvent('heroVerifySubmit', {
+        detail: { input: inputText, model: model || 'llama-4-maverick-or', imageFiles: imageFiles || [] }
+      });
+      window.dispatchEvent(event);
+      return;
+    }
+    
     // Store the input, model, and image files in sessionStorage to pass it to the verify page
     sessionStorage.setItem('pendingVerification', JSON.stringify({
       input: inputText,
-      model: model || 'fakeverifier-hf',
+      model: model || 'llama-4-maverick-or',
       imageFiles: imageFiles ? Array.from(imageFiles).map(file => file.name) : []
     }));
     

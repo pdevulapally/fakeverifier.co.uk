@@ -33,31 +33,68 @@ export async function callFakeVerifierModel(text: string): Promise<VerdictRespon
   }
 }
 
-// Pro/Enterprise – Llama chat via HF Router (OpenAI-compatible)
-export async function callLlamaChat(messages: any[]): Promise<string> {
-  const baseURL = 'https://router.huggingface.co/v1';
-  const model = process.env.LLAMA_MODEL_ID || 'meta-llama/Llama-3.1-8B-Instruct:sambanova';
-  const url = `${baseURL}/chat/completions`;
+// OpenRouter API call with free models
+export async function callOpenRouterChat(messages: any[], model: string): Promise<string> {
+  const url = 'https://openrouter.ai/api/v1/chat/completions';
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    Authorization: `Bearer ${process.env.HF_TOKEN || process.env.HUGGINGFACE_TOKEN || ''}`,
+    'HTTP-Referer': process.env.NEXT_PUBLIC_BASE_URL || 'https://fakeverifier.co.uk',
+    'X-Title': 'FakeVerifier',
   };
+  
+  // Add API key if available (optional for free models)
+  if (process.env.OPENROUTER_API_KEY) {
+    headers['Authorization'] = `Bearer ${process.env.OPENROUTER_API_KEY}`;
+  }
+  
   try {
     const r = await fetchWithRetry(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ model, messages, temperature: 0.3, stream: false }),
+      body: JSON.stringify({ 
+        model, 
+        messages, 
+        temperature: 0.3, 
+        stream: false 
+      }),
       cache: 'no-store',
     });
     const data = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(data?.error?.message || `HF Router error (${r.status})`);
+    if (!r.ok) {
+      const errorMsg = data?.error?.message || data?.error || `OpenRouter error (${r.status})`;
+      throw new Error(errorMsg);
+    }
     const content = data?.choices?.[0]?.message?.content;
-    if (!content) throw new Error('Empty response from Llama');
+    if (!content) throw new Error('Empty response from OpenRouter');
     return String(content);
   } catch (e) {
-    logNetworkError(e, 'HF Router (Llama Chat)', url);
+    logNetworkError(e, 'OpenRouter Chat', url);
     throw e;
   }
+}
+
+// Llama chat via OpenRouter only (Hugging Face removed)
+// Accepts optional modelId parameter to route to specific OpenRouter model
+export async function callLlamaChat(messages: any[], modelId?: string): Promise<string> {
+  // Map model IDs to their actual OpenRouter API model names
+  const modelMap: Record<string, string> = {
+    'llama-4-maverick-or': 'meta-llama/llama-4-maverick:free',
+    'gpt-oss-20b-or': 'openai/gpt-oss-20b:free'
+  };
+
+  // Normalize modelId (trim and lowercase for matching)
+  const normalizedModelId = (modelId || '').toString().trim().toLowerCase();
+  
+  // Find matching model (case-insensitive)
+  const matchedKey = Object.keys(modelMap).find(key => key.toLowerCase() === normalizedModelId);
+  
+  // Default to Llama 4 Maverick if no model specified or not found
+  const selectedModel = matchedKey && modelMap[matchedKey]
+    ? modelMap[matchedKey]
+    : 'meta-llama/llama-4-maverick:free';
+
+  // Use OpenRouter directly - no Hugging Face calls
+  return callOpenRouterChat(messages, selectedModel);
 }
 
 export async function fetchSerperEvidence(query: string): Promise<{ title?: string; link?: string; snippet?: string }[]> {

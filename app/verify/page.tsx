@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -463,22 +463,8 @@ function VerifyPage() {
     }
   }
 
-  // Check for pending verification from hero section
-  useEffect(() => {
-    if (user && !authLoading) {
-      const pendingVerification = sessionStorage.getItem('pendingVerification');
-        if (pendingVerification) {
-          sessionStorage.removeItem('pendingVerification');
-          try {
-            const data = JSON.parse(pendingVerification);
-            onVerify(data.input, data.model, data.imageFiles);
-          } catch {
-            // Fallback for old format
-            onVerify(pendingVerification);
-          }
-        }
-    }
-  }, [user, authLoading]);
+  // Check for pending verification from hero section (works for both logged-in and anonymous users)
+  // This will be moved after onVerify is defined
 
   // Allow anonymous access - no redirect to login
   // Users can use Llama 3.1 without logging in (with limits)
@@ -623,8 +609,10 @@ function VerifyPage() {
     setEditingTitle('');
   }
 
-  async function onVerify(inputText: string, model?: string, imageFiles?: File[], regenerate?: boolean) {
-    if (!inputText.trim()) return;
+  const onVerify = async (inputText: string, model?: string, imageFiles?: File[], regenerate?: boolean) => {
+    if (!inputText || !inputText.trim()) {
+      return;
+    }
     
     setLoading(true);
     setTimeline([]);
@@ -663,12 +651,14 @@ function VerifyPage() {
       // Build lightweight context from recent turns to help follow-ups
       const recent = messages.slice(-6).map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n');
 
-      // If user selected the Llama chat model, route to unified /api/chat
-      if ((model || '').includes('llama')) {
+      // If user selected a chat model (llama, gpt-oss, maverick), route to unified /api/chat
+      const chatModelIds = ['llama', 'gpt-oss', 'maverick'];
+      const isChatModel = chatModelIds.some(id => (model || '').toLowerCase().includes(id));
+      if (isChatModel) {
         const chatRes = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: inputText, userId: user?.uid || 'demo', history: [], model: model || 'llama-hf-router' }),
+          body: JSON.stringify({ message: inputText, userId: user?.uid || 'demo', history: [], model: model || 'llama-4-maverick-or' }),
         });
         const chatJson = await chatRes.json();
         
@@ -853,7 +843,45 @@ function VerifyPage() {
     } finally {
       setLoading(false);
     }
-  }
+  };
+  
+  
+  // Check for pending verification from hero section (works for both logged-in and anonymous users)
+  useEffect(() => {
+    if (!authLoading) {
+      const pendingVerification = sessionStorage.getItem('pendingVerification');
+        if (pendingVerification) {
+          sessionStorage.removeItem('pendingVerification');
+          try {
+            const data = JSON.parse(pendingVerification);
+            // Ensure we have valid input before calling onVerify
+            if (data && data.input && typeof data.input === 'string' && data.input.trim()) {
+              onVerify(data.input, data.model, data.imageFiles);
+            }
+          } catch (error) {
+            // If parsing fails, check if it's a plain string (old format)
+            if (typeof pendingVerification === 'string' && pendingVerification.trim()) {
+              onVerify(pendingVerification);
+            }
+          }
+        }
+    }
+  }, [authLoading, onVerify]);
+  
+  // Listen for hero section submissions when already on verify page
+  useEffect(() => {
+    const handleHeroVerify = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const { input, model, imageFiles } = customEvent.detail;
+      onVerify(input, model, imageFiles);
+    };
+    
+    window.addEventListener('heroVerifySubmit', handleHeroVerify);
+    
+    return () => {
+      window.removeEventListener('heroVerifySubmit', handleHeroVerify);
+    };
+  }, [onVerify]);
 
   // Actions for assistant messages
   async function onFeedback(messageId: string, type: 'up'|'down') {
