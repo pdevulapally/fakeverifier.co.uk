@@ -203,24 +203,11 @@ function VerifyPage() {
   const [privacyLevel, setPrivacyLevel] = useState<'private' | 'link' | 'public'>('private');
   const [accessLogs, setAccessLogs] = useState<any[]>([]);
   const [showAccessManagement, setShowAccessManagement] = useState(false);
+  const [anonymousChatInfo, setAnonymousChatInfo] = useState<{ count: number; limit: number; remaining: number; showWarning: boolean } | null>(null);
+  const [showLoginWarning, setShowLoginWarning] = useState(false);
 
-  // Handle sidebar state based on screen size
-  useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth >= 1024) { // lg breakpoint
-        setSidebarOpen(true);
-      } else {
-        setSidebarOpen(false);
-      }
-    };
-
-    // Set initial state
-    handleResize();
-
-    // Listen for resize events
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  // Sidebar defaults to closed - removed auto-open behavior
+  // Sidebar is hidden for anonymous users
 
   // Load memories
   useEffect(() => {
@@ -493,12 +480,8 @@ function VerifyPage() {
     }
   }, [user, authLoading]);
 
-  // Redirect to login if not authenticated
-  useEffect(() => {
-    if (!authLoading && !user) {
-      window.location.href = '/login';
-    }
-  }, [authLoading, user]);
+  // Allow anonymous access - no redirect to login
+  // Users can use Llama 3.1 without logging in (with limits)
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -688,7 +671,30 @@ function VerifyPage() {
           body: JSON.stringify({ message: inputText, userId: user?.uid || 'demo', history: [], model: model || 'llama-hf-router' }),
         });
         const chatJson = await chatRes.json();
+        
+        // Handle anonymous chat limit
+        if (chatRes.status === 429 && chatJson.error === 'limit_reached') {
+          setError(chatJson.message || 'You\'ve reached the free chat limit. Please sign in to continue.');
+          setShowLoginWarning(true);
+          setLoading(false);
+          return;
+        }
+        
         if (!chatRes.ok) throw new Error(chatJson?.error || 'Chat failed');
+
+        // Update anonymous chat info if present (for anonymous users)
+        if (chatJson.anonymousChatCount !== undefined) {
+          setAnonymousChatInfo({
+            count: chatJson.anonymousChatCount,
+            limit: chatJson.anonymousChatLimit || 10,
+            remaining: chatJson.remaining || 0,
+            showWarning: chatJson.showWarning || false
+          });
+          // Show warning banner if threshold reached
+          if (chatJson.showWarning) {
+            setShowLoginWarning(true);
+          }
+        }
 
         const assistantMessage: Message = {
           id: (Date.now() + 1).toString(),
@@ -1046,13 +1052,43 @@ function VerifyPage() {
     );
   }
 
-  // Redirect to login if not authenticated
-  if (!user) {
-    return null; // Will redirect in useEffect
-  }
+  // Allow anonymous access - no redirect to login
+  // Users can use Llama 3.1 without logging in (with limits)
 
   return (
     <div className="h-screen w-screen bg-gray-100 overflow-hidden">
+      {/* Anonymous User Warning Banner */}
+      {showLoginWarning && !user && anonymousChatInfo && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg">
+          <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="h-5 w-5 flex-shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium">
+                    {anonymousChatInfo.remaining > 0 
+                      ? `You've used ${anonymousChatInfo.count} of ${anonymousChatInfo.limit} free chats. ${anonymousChatInfo.remaining} remaining.`
+                      : `You've reached the free chat limit.`
+                    }
+                    {' '}
+                    <Link href="/login" className="underline font-semibold hover:text-amber-100">
+                      Sign in
+                    </Link>
+                    {' '}to continue using Llama 3.1 without limits.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowLoginWarning(false)}
+                className="ml-4 flex-shrink-0 rounded-md p-1.5 text-white hover:bg-white/20 transition-colors"
+                aria-label="Dismiss"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Delete Confirmation Modal */}
       {confirmDeleteOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -1085,8 +1121,8 @@ function VerifyPage() {
       )}
       {/* Mobile Layout */}
       <div className="lg:hidden h-full w-full bg-white overflow-hidden relative">
-        {/* Mobile Sidebar Overlay */}
-        {sidebarOpen && (
+        {/* Mobile Sidebar Overlay - Hidden for anonymous users */}
+        {sidebarOpen && user && (
           <div 
             className="fixed inset-0 bg-black bg-opacity-50 z-40"
             onClick={() => setSidebarOpen(false)}
@@ -1094,7 +1130,8 @@ function VerifyPage() {
         )}
         
 
-        {/* Mobile Sidebar */}
+        {/* Mobile Sidebar - Hidden for anonymous users */}
+        {user && (
         <div className={`fixed left-0 top-0 h-full w-80 bg-gray-50 z-50 transform transition-transform duration-300 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}>
@@ -1249,21 +1286,25 @@ function VerifyPage() {
             </div>
           </div>
         </div>
+        )}
 
         {/* Mobile Header */}
         <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 bg-white">
           <div className="flex items-center gap-3">
-            <button 
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="rounded-lg p-2 hover:bg-gray-100"
-            >
-              <img src="/Images/sidebar-toggle-nav-side-aside-svgrepo-com.svg" alt="Toggle Sidebar" className="h-5 w-5" />
-            </button>
+            {/* Sidebar toggle - Hidden for anonymous users */}
+            {user && (
+              <button 
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                className="rounded-lg p-2 hover:bg-gray-100"
+              >
+                <img src="/Images/sidebar-toggle-nav-side-aside-svgrepo-com.svg" alt="Toggle Sidebar" className="h-5 w-5" />
+              </button>
+            )}
             <img src="/Images/Fakeverifier-official-logo.png" alt="FakeVerifier Official Logo" className="h-8" />
           </div>
           <div className="flex items-center gap-2">
-            {/* Share Icon - Only show when there's a conversation with messages */}
-            {currentConversationId && messages.length > 0 && (
+            {/* Share Icon - Only show for logged-in users when there's a conversation with messages */}
+            {user && currentConversationId && messages.length > 0 && (
               <button 
                 onClick={generateShareLink}
                 className="rounded-lg p-2 hover:bg-gray-100"
@@ -1273,42 +1314,60 @@ function VerifyPage() {
               </button>
             )}
             
-            {/* Three Dots Dropdown */}
-            <div className="relative three-dots-dropdown">
-              <button 
-                onClick={() => setThreeDotsDropdownOpen(!threeDotsDropdownOpen)}
-                className="rounded-lg p-2 hover:bg-gray-100"
-              >
-                <MoreHorizontal className="h-5 w-5 text-gray-500" />
-              </button>
-              
-              {/* Dropdown Menu */}
-              {threeDotsDropdownOpen && (
-                <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
-                  <div className="py-1">
-                    <button 
-                      onClick={openReportModal}
-                      className="flex w-full items-center gap-3 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
-                    >
-                      <Flag className="h-4 w-4" />
-                      <span>Report</span>
-                    </button>
-                    <button 
-                      onClick={() => {
-                        if (currentConversationId) {
-                          requestDeleteConversation(currentConversationId, conversations.find(c => c.id === currentConversationId)?.title || 'Conversation');
-                        }
-                        setThreeDotsDropdownOpen(false);
-                      }}
-                      className="flex w-full items-center gap-3 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      <span>Delete</span>
-                    </button>
+            {/* Login and Sign up buttons for anonymous users - replacing three dots */}
+            {!user ? (
+              <div className="flex items-center gap-2">
+                <Link
+                  href="/login"
+                  className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Login
+                </Link>
+                <Link
+                  href="/signup"
+                  className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Sign up for free
+                </Link>
+              </div>
+            ) : (
+              /* Three Dots Dropdown - only for logged-in users */
+              <div className="relative three-dots-dropdown">
+                <button 
+                  onClick={() => setThreeDotsDropdownOpen(!threeDotsDropdownOpen)}
+                  className="rounded-lg p-2 hover:bg-gray-100"
+                >
+                  <MoreHorizontal className="h-5 w-5 text-gray-500" />
+                </button>
+                
+                {/* Dropdown Menu */}
+                {threeDotsDropdownOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                    <div className="py-1">
+                      <button 
+                        onClick={openReportModal}
+                        className="flex w-full items-center gap-3 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                      >
+                        <Flag className="h-4 w-4" />
+                        <span>Report</span>
+                      </button>
+                      <button 
+                        onClick={() => {
+                          if (currentConversationId) {
+                            requestDeleteConversation(currentConversationId, conversations.find(c => c.id === currentConversationId)?.title || 'Conversation');
+                          }
+                          setThreeDotsDropdownOpen(false);
+                        }}
+                        className="flex w-full items-center gap-3 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        <span>Delete</span>
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -1340,7 +1399,7 @@ function VerifyPage() {
                           <button onClick={() => onFeedback(m.id, 'up')} className="rounded-lg p-2 hover:bg-gray-100"><ThumbsUp className="h-4 w-4 text-gray-500" /></button>
                           <button onClick={() => onFeedback(m.id, 'down')} className="rounded-lg p-2 hover:bg-gray-100"><ThumbsDown className="h-4 w-4 text-gray-500" /></button>
                           <button onClick={() => onCopy(m.content)} className="rounded-lg p-2 hover:bg-gray-100"><Copy className="h-4 w-4 text-gray-500" /></button>
-                          <button onClick={() => onShare(m.content)} className="rounded-lg p-2 hover:bg-gray-100"><Share className="h-4 w-4 text-gray-500" /></button>
+                          {user && <button onClick={() => onShare(m.content)} className="rounded-lg p-2 hover:bg-gray-100"><Share className="h-4 w-4 text-gray-500" /></button>}
                           <button onClick={onRegenerate} className="rounded-lg p-2 hover:bg-gray-100"><RotateCcw className="h-4 w-4 text-gray-500" /></button>
                           <div className="ml-auto" />
                         </div>
@@ -1459,7 +1518,8 @@ function VerifyPage() {
       {/* Desktop Layout */}
       <div className="hidden lg:block h-screen w-screen bg-gray-100 p-4">
         <div className="flex h-full w-full overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-gray-100">
-      {/* Left Sidebar */}
+      {/* Left Sidebar - Hidden for anonymous users */}
+           {user && (
            <aside className={`${sidebarOpen ? 'w-[300px]' : 'w-0'} shrink-0 bg-gray-50 flex-col rounded-l-3xl rounded-r-3xl overflow-hidden transition-all duration-300`}>
           <div className="flex h-full flex-col p-6">
             {/* Brand row */}
@@ -1678,13 +1738,15 @@ function VerifyPage() {
           </div>
           </div>
         </aside>
+        )}
 
            {/* Main */}
-           <main className={`relative flex min-w-0 flex-1 flex-col bg-white ${sidebarOpen ? 'border-l border-gray-200' : ''} overflow-hidden transition-all duration-300`}>
+           <main className={`relative flex min-w-0 flex-1 flex-col bg-white ${user && sidebarOpen ? 'border-l border-gray-200' : ''} overflow-hidden transition-all duration-300`}>
             {/* Chat header (title row) */}
             <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
               <div className="flex items-center gap-3">
-                {!sidebarOpen && (
+                {/* Sidebar toggle - Hidden for anonymous users */}
+                {user && !sidebarOpen && (
                   <button 
                     onClick={() => setSidebarOpen(true)}
                     className="rounded-lg p-2 hover:bg-gray-100"
@@ -1702,8 +1764,8 @@ function VerifyPage() {
         </div>
               </div>
               <div className="flex items-center gap-2">
-                {/* Share Icon - Only show when there's a conversation with messages */}
-                {currentConversationId && messages.length > 0 && (
+                {/* Share Icon - Only show for logged-in users when there's a conversation with messages */}
+                {user && currentConversationId && messages.length > 0 && (
                   <button 
                     onClick={generateShareLink}
                     className="rounded-lg p-2 hover:bg-gray-100"
@@ -1713,42 +1775,60 @@ function VerifyPage() {
                   </button>
                 )}
                 
-                {/* Three Dots Dropdown */}
-                <div className="relative three-dots-dropdown">
-                  <button 
-                    onClick={() => setThreeDotsDropdownOpen(!threeDotsDropdownOpen)}
-                    className="rounded-lg p-2 hover:bg-gray-100"
-                  >
-                    <MoreHorizontal className="h-5 w-5 text-gray-500" />
-                  </button>
-                  
-                  {/* Dropdown Menu */}
-                  {threeDotsDropdownOpen && (
-                    <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
-                      <div className="py-1">
-                        <button 
-                          onClick={openReportModal}
-                          className="flex w-full items-center gap-3 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
-                        >
-                          <Flag className="h-4 w-4" />
-                          <span>Report</span>
-                        </button>
-                        <button 
-                          onClick={() => {
-                            if (currentConversationId) {
-                              requestDeleteConversation(currentConversationId, conversations.find(c => c.id === currentConversationId)?.title || 'Conversation');
-                            }
-                            setThreeDotsDropdownOpen(false);
-                          }}
-                          className="flex w-full items-center gap-3 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          <span>Delete</span>
-                        </button>
+                {/* Login and Sign up buttons for anonymous users - replacing three dots */}
+                {!user ? (
+                  <div className="flex items-center gap-2">
+                    <Link
+                      href="/login"
+                      className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      Login
+                    </Link>
+                    <Link
+                      href="/signup"
+                      className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      Sign up for free
+                    </Link>
+                  </div>
+                ) : (
+                  /* Three Dots Dropdown - only for logged-in users */
+                  <div className="relative three-dots-dropdown">
+                    <button 
+                      onClick={() => setThreeDotsDropdownOpen(!threeDotsDropdownOpen)}
+                      className="rounded-lg p-2 hover:bg-gray-100"
+                    >
+                      <MoreHorizontal className="h-5 w-5 text-gray-500" />
+                    </button>
+                    
+                    {/* Dropdown Menu */}
+                    {threeDotsDropdownOpen && (
+                      <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                        <div className="py-1">
+                          <button 
+                            onClick={openReportModal}
+                            className="flex w-full items-center gap-3 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                          >
+                            <Flag className="h-4 w-4" />
+                            <span>Report</span>
+                          </button>
+                          <button 
+                            onClick={() => {
+                              if (currentConversationId) {
+                                requestDeleteConversation(currentConversationId, conversations.find(c => c.id === currentConversationId)?.title || 'Conversation');
+                              }
+                              setThreeDotsDropdownOpen(false);
+                            }}
+                            className="flex w-full items-center gap-3 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            <span>Delete</span>
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
               </div>
       </div>
       
@@ -1779,7 +1859,7 @@ function VerifyPage() {
                             <button onClick={() => onFeedback(m.id, 'up')} className="rounded-lg p-1.5 sm:p-2 hover:bg-gray-100 active:bg-gray-200 touch-manipulation"><ThumbsUp className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" /></button>
                             <button onClick={() => onFeedback(m.id, 'down')} className="rounded-lg p-1.5 sm:p-2 hover:bg-gray-100 active:bg-gray-200 touch-manipulation"><ThumbsDown className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" /></button>
                             <button onClick={() => onCopy(m.content)} className="rounded-lg p-1.5 sm:p-2 hover:bg-gray-100 active:bg-gray-200 touch-manipulation"><Copy className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" /></button>
-                            <button onClick={() => onShare(m.content)} className="rounded-lg p-1.5 sm:p-2 hover:bg-gray-100 active:bg-gray-200 touch-manipulation"><Share className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" /></button>
+                            {user && <button onClick={() => onShare(m.content)} className="rounded-lg p-1.5 sm:p-2 hover:bg-gray-100 active:bg-gray-200 touch-manipulation"><Share className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" /></button>}
                             <button onClick={onRegenerate} className="rounded-lg p-1.5 sm:p-2 hover:bg-gray-100 active:bg-gray-200 touch-manipulation"><RotateCcw className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" /></button>
                             <div className="ml-auto" />
                             <button className="inline-flex items-center gap-2 rounded-lg sm:rounded-xl border border-gray-200 bg-white px-2.5 py-1.5 sm:px-3 sm:py-2 text-xs sm:text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 active:bg-gray-100 touch-manipulation">

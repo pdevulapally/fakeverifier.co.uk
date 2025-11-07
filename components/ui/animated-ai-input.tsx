@@ -89,7 +89,21 @@ const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 const PASTE_THRESHOLD = 200; // characters threshold for showing as pasted content
 
 // Expose models based on plan: All plans get FakeVerifier (Web Search) + plan-specific models
-const getAvailableModels = (userPlan: string): ModelOption[] => {
+// Anonymous users only get Llama 3.1
+const getAvailableModels = (userPlan: string, isAnonymous: boolean = false): ModelOption[] => {
+  // Anonymous users only get Llama 3.1
+  if (isAnonymous) {
+    return [
+      {
+        id: "llama-hf-router",
+        name: "Llama 3.1 (Chat)",
+        description: "Conversational multilingual reasoning with evidence",
+        badge: "Free",
+        logo: "/Images/Meta_Platforms_logo.svg",
+      },
+    ];
+  }
+
   const baseModels = [
     {
       id: "openai-agent-builder",
@@ -513,17 +527,25 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
   const [uploading, setUploading] = useState(false);
   const { user } = useAuth();
 
-  // Get available models based on user plan
-  const availableModels = models || getAvailableModels(userPlan);
+  // Check if user is anonymous
+  const isAnonymous = !user;
+
+  // Get available models based on user plan and anonymous status
+  const availableModels = models || getAvailableModels(userPlan, isAnonymous);
   
-  // Initialize with FakeVerifier (Web Search) as default
+  // Initialize model selection - Llama 3.1 for anonymous, FakeVerifier for logged-in
   const [selectedModel, setSelectedModel] = useState<string>(() => {
     if (defaultModel) return defaultModel;
-    // Always prefer FakeVerifier (Web Search) as default
-    const initialModels = models || getAvailableModels("free"); // Use free as fallback for initial state
+    const initialModels = models || getAvailableModels(isAnonymous ? "free" : "free", isAnonymous);
+    // For anonymous users, default to Llama 3.1
+    if (isAnonymous) {
+      const llamaModel = initialModels.find(m => m.id === "llama-hf-router");
+      if (llamaModel) return "llama-hf-router";
+    }
+    // For logged-in users, prefer FakeVerifier (Web Search)
     const openAIModel = initialModels.find(m => m.id === "openai-agent-builder");
     if (openAIModel) return "openai-agent-builder";
-    return initialModels[0]?.id || "openai-agent-builder";
+    return initialModels[0]?.id || (isAnonymous ? "llama-hf-router" : "openai-agent-builder");
   });
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -542,36 +564,52 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
       });
   }, [user?.uid]);
 
-  // Ensure FakeVerifier (Web Search) is selected by default when models are first loaded
+  // Ensure correct model is selected by default when models are first loaded
   useEffect(() => {
     if (!defaultModel && availableModels.length > 0) {
-      const openAIModel = availableModels.find(m => m.id === "openai-agent-builder");
       const isCurrentModelValid = availableModels.some(m => m.id === selectedModel);
       
-      // If FakeVerifier (Web Search) is available and current model is invalid or not set, default to it
-      if (openAIModel && (!isCurrentModelValid || selectedModel !== "openai-agent-builder")) {
-        // Only auto-switch if the current model is invalid, otherwise respect user's choice
-        if (!isCurrentModelValid) {
-          setSelectedModel("openai-agent-builder");
-          onModelChange?.("openai-agent-builder");
+      if (!isCurrentModelValid) {
+        // For anonymous users, default to Llama 3.1
+        if (isAnonymous) {
+          const llamaModel = availableModels.find(m => m.id === "llama-hf-router");
+          if (llamaModel) {
+            setSelectedModel("llama-hf-router");
+            onModelChange?.("llama-hf-router");
+          }
+        } else {
+          // For logged-in users, default to FakeVerifier (Web Search)
+          const openAIModel = availableModels.find(m => m.id === "openai-agent-builder");
+          if (openAIModel) {
+            setSelectedModel("openai-agent-builder");
+            onModelChange?.("openai-agent-builder");
+          }
         }
       }
     }
-  }, [availableModels.length, defaultModel]); // Only run when models change, not on every render
+  }, [availableModels.length, defaultModel, isAnonymous]); // Only run when models change, not on every render
 
-  // Update selected model when user plan changes
+  // Update selected model when user plan or anonymous status changes
   useEffect(() => {
-    const newModels = getAvailableModels(userPlan);
+    const newModels = getAvailableModels(userPlan, isAnonymous);
     
-    // If current selected model is not in the new available models, switch to FakeVerifier (Web Search) (default)
+    // If current selected model is not in the new available models, switch to appropriate default
     const isCurrentModelAvailable = newModels.some(m => m.id === selectedModel);
     if (newModels.length > 0 && !isCurrentModelAvailable) {
-      const openAIModel = newModels.find(m => m.id === "openai-agent-builder");
-      const preferred = openAIModel ? "openai-agent-builder" : (newModels[0]?.id || "openai-agent-builder");
+      let preferred: string;
+      if (isAnonymous) {
+        // For anonymous users, prefer Llama 3.1
+        const llamaModel = newModels.find(m => m.id === "llama-hf-router");
+        preferred = llamaModel ? "llama-hf-router" : (newModels[0]?.id || "llama-hf-router");
+      } else {
+        // For logged-in users, prefer FakeVerifier (Web Search)
+        const openAIModel = newModels.find(m => m.id === "openai-agent-builder");
+        preferred = openAIModel ? "openai-agent-builder" : (newModels[0]?.id || "openai-agent-builder");
+      }
       setSelectedModel(preferred);
       onModelChange?.(preferred);
     }
-  }, [userPlan, selectedModel, onModelChange]);
+  }, [userPlan, selectedModel, onModelChange, isAnonymous]);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -739,6 +777,12 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
 
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      // Disable file paste for anonymous users
+      if (isAnonymous) {
+        // Allow text paste only
+        return;
+      }
+
       const clipboardData = e.clipboardData;
       const items = clipboardData.items;
 
@@ -777,7 +821,7 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
         }
       }
     },
-    [handleFileSelect, files.length, maxFiles, pastedContent.length, message]
+    [handleFileSelect, files.length, maxFiles, pastedContent.length, message, isAnonymous]
   );
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -855,11 +899,11 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
   return (
     <div
       className="relative w-full max-w-2xl mx-auto px-2 sm:px-0"
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+      onDragOver={!isAnonymous ? handleDragOver : undefined}
+      onDragLeave={!isAnonymous ? handleDragLeave : undefined}
+      onDrop={!isAnonymous ? handleDrop : undefined}
     >
-      {isDragging && (
+      {!isAnonymous && isDragging && (
         <div className="absolute inset-0 z-50 bg-primary/10 border-2 border-dashed border-primary rounded-xl flex flex-col items-center justify-center pointer-events-none">
           <p className="text-sm text-primary flex items-center gap-2">
             <ImageIcon className="size-4 opacity-50" />
@@ -894,25 +938,28 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
         />
         <div className="flex items-center gap-1 sm:gap-2 justify-between w-full px-2 sm:px-3 pb-1.5">
           <div className="flex items-center gap-1 sm:gap-2">
-            <Button
-              size="icon"
-              variant="ghost"
-              className={cn(
-                "h-8 w-8 sm:h-9 sm:w-9 p-0 flex-shrink-0",
-                variant === "hero" || variant === "glassmorphism"
-                  ? "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
-                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
-              )}
-              onClick={() => fileInputRef.current?.click()}
-              disabled={disabled || files.length >= maxFiles}
-              title={
-                files.length >= maxFiles
-                  ? `Max ${maxFiles} files reached`
-                  : "Attach files"
-              }
-            >
-              <PaperclipIcon className="h-4 w-4 sm:h-5 sm:w-5" />
-            </Button>
+            {/* Hide file upload button for anonymous users */}
+            {!isAnonymous && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className={cn(
+                  "h-8 w-8 sm:h-9 sm:w-9 p-0 flex-shrink-0",
+                  variant === "hero" || variant === "glassmorphism"
+                    ? "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                )}
+                onClick={() => fileInputRef.current?.click()}
+                disabled={disabled || files.length >= maxFiles}
+                title={
+                  files.length >= maxFiles
+                    ? `Max ${maxFiles} files reached`
+                    : "Attach files"
+                }
+              >
+                <PaperclipIcon className="h-4 w-4 sm:h-5 sm:w-5" />
+              </Button>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {/* Always show model selector when multiple models are available */}
@@ -924,9 +971,17 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
                   onModelChange={handleModelChangeInternal}
                 />
               ) : (
-                // Show single model as a badge when only one is available (shouldn't happen with current setup)
-                <div className="px-2 py-1 text-xs font-medium text-muted-foreground bg-muted rounded-md">
-                  {availableModels[0]?.name || "Model"}
+                // Show single model as a badge with logo when only one is available (e.g., anonymous users)
+                <div className="px-2 py-1 text-xs font-medium text-muted-foreground bg-muted rounded-md flex items-center gap-1.5">
+                  {availableModels[0]?.logo && (
+                    <img src={availableModels[0].logo} alt="model logo" className="h-3.5 w-3.5 object-contain" />
+                  )}
+                  <span>{availableModels[0]?.name || "Model"}</span>
+                  {availableModels[0]?.badge && (
+                    <span className="px-1 py-0.5 text-[10px] bg-primary/20 text-primary rounded">
+                      {availableModels[0].badge}
+                    </span>
+                  )}
                 </div>
               )
             ) : null}
@@ -981,17 +1036,20 @@ const ClaudeChatInput: React.FC<ChatInputProps> = ({
         )}
       </div>
 
-      <input
-        ref={fileInputRef}
-        type="file"
-        multiple
-        className="hidden"
-        accept={acceptedFileTypes?.join(",")}
-        onChange={(e) => {
-          handleFileSelect(e.target.files);
-          if (e.target) e.target.value = ""; // Reset file input
-        }}
-      />
+      {/* Hide file input for anonymous users */}
+      {!isAnonymous && (
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          accept={acceptedFileTypes?.join(",")}
+          onChange={(e) => {
+            handleFileSelect(e.target.files);
+            if (e.target) e.target.value = ""; // Reset file input
+          }}
+        />
+      )}
     </div>
   );
 };
@@ -1010,6 +1068,9 @@ export function AI_Prompt({
 }) {
   const [userPlan, setUserPlan] = useState<string>("free");
   const { user } = useAuth();
+
+  // Check if user is anonymous
+  const isAnonymous = !user;
 
   // Load user plan
   useEffect(() => {
@@ -1036,7 +1097,9 @@ export function AI_Prompt({
       .map(f => f.file);
     
     // Call the original onSend function with the chosen model
-    onSend?.(message, modelId || "openai-agent-builder", imageFiles);
+    // For anonymous users, default to Llama 3.1 if no model specified
+    const defaultModel = isAnonymous ? "llama-hf-router" : "openai-agent-builder";
+    onSend?.(message, modelId || defaultModel, imageFiles);
   };
 
   return (
@@ -1046,7 +1109,7 @@ export function AI_Prompt({
         placeholder={placeholder}
         maxFiles={10}
         maxFileSize={50 * 1024 * 1024} // 50MB
-        models={getAvailableModels(userPlan)}
+        models={getAvailableModels(userPlan, isAnonymous)}
         variant={variant}
       />
     </div>

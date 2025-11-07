@@ -133,6 +133,16 @@ async function getUserMemories(uid: string): Promise<string[]> {
   }
 }
 
+function getAnonymousChatCount(req: NextRequest): number {
+  try {
+    const cookieHeader = (req.headers.get('cookie') || '').toString();
+    const match = cookieHeader.match(/(?:^|;\s*)anonymous_chat_count=(\d+)/);
+    return match ? parseInt(match[1], 10) : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { message, userId: bodyUserId, history, model } = await req.json();
@@ -147,10 +157,41 @@ export async function POST(req: NextRequest) {
     const userId = (bodyUserId || headerUid || cookieUid || '').toString();
 
     let plan = await getUserPlan((userId || '').toString());
-    // If client explicitly selected a llama model, honor it regardless of plan
-    if ((model || '').toString().includes('llama')) plan = 'pro';
+    const isAnonymous = !userId || userId === 'demo' || userId === '';
+    const isLlamaModel = (model || '').toString().includes('llama');
+    
+    // Track anonymous chat usage for Llama models
+    let anonymousChatCount = 0;
+    let newAnonymousCount = 0;
+    if (isAnonymous && isLlamaModel) {
+      anonymousChatCount = getAnonymousChatCount(req);
+      const ANONYMOUS_LIMIT = 10; // Allow 10 free chats without login
+      
+      if (anonymousChatCount >= ANONYMOUS_LIMIT) {
+        return new Response(JSON.stringify({ 
+          error: 'limit_reached',
+          message: 'You\'ve reached the free chat limit. Please sign in to continue using Llama 3.1.',
+          remaining: 0
+        }), { 
+          status: 429,
+          headers: { 
+            'Content-Type': 'application/json',
+            'Set-Cookie': `anonymous_chat_count=${anonymousChatCount}; Path=/; Max-Age=86400; SameSite=Lax`
+          }
+        });
+      }
+      
+      // Increment anonymous chat count
+      newAnonymousCount = anonymousChatCount + 1;
+      
+      // Allow anonymous users to use Llama (treat as 'pro' for model access)
+      plan = 'pro';
+    } else if (isLlamaModel && !isAnonymous) {
+      // Logged-in users: honor Llama model selection regardless of plan
+      plan = 'pro';
+    }
 
-    if (plan === 'free') {
+    if (plan === 'free' && !isLlamaModel) {
     const res = await withRetry(() => callFakeVerifierModel(text));
       const emoji = res.verdict.includes('Real') ? '🟩' : res.verdict.includes('Fake') ? '🟥' : '🟨';
     let result = `${emoji} ${res.verdict}\nConfidence: ${res.confidence}%`;
@@ -169,7 +210,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Pro / Enterprise path
+    // Pro / Enterprise path (including anonymous Llama access)
     const needsEvidence = isFactCheckIntent(text);
     const evidence = needsEvidence ? await aggregateEvidence(text) : [];
     const pref = await getUserPreferenceHint((userId || '').toString());
@@ -180,9 +221,30 @@ export async function POST(req: NextRequest) {
     if (needsEvidence) reply = sanitizeReplyWithEvidence(reply, evidence);
     // fire-and-forget auto-memories
     saveAutoMemories((userId || '').toString(), text, reply);
-    return new Response(JSON.stringify({ result: reply, evidence }), {
+    
+    // Build response with anonymous chat info if applicable
+    const responseData: any = { result: reply, evidence };
+    if (isAnonymous && isLlamaModel) {
+      const ANONYMOUS_LIMIT = 10;
+      responseData.anonymousChatCount = newAnonymousCount;
+      responseData.anonymousChatLimit = ANONYMOUS_LIMIT;
+      responseData.remaining = Math.max(0, ANONYMOUS_LIMIT - newAnonymousCount);
+      responseData.showWarning = newAnonymousCount >= 5; // Show warning after 5 chats
+    }
+    
+    const responseHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store'
+    };
+    
+    // Set cookie for anonymous users
+    if (isAnonymous && isLlamaModel) {
+      responseHeaders['Set-Cookie'] = `anonymous_chat_count=${newAnonymousCount}; Path=/; Max-Age=86400; SameSite=Lax`;
+    }
+    
+    return new Response(JSON.stringify(responseData), {
       status: 200,
-      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+      headers: responseHeaders,
     });
   } catch (e: any) {
     logNetworkError(e, '/api/chat', 'router');
