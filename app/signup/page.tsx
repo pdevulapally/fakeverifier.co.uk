@@ -150,6 +150,17 @@ export default function SignUpPage() {
               {loading ? 'Creating account...' : 'Sign up'}
             </button>
           </form>
+          
+          <p className="text-xs text-gray-600 text-center mt-4">
+            By signing up, you agree to our{' '}
+            <a href="/terms" className="text-blue-600 hover:text-blue-500 font-medium underline" target="_blank" rel="noopener noreferrer">
+              Terms and Conditions
+            </a>
+            {' '}and{' '}
+            <a href="/privacy" className="text-blue-600 hover:text-blue-500 font-medium underline" target="_blank" rel="noopener noreferrer">
+              Privacy Policy
+            </a>
+          </p>
 
           {/* Divider */}
           <div className="relative">

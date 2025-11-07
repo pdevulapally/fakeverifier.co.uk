@@ -21,26 +21,27 @@ const footerLinks: FooterSection[] = [
 		links: [
 			{ title: 'Verify', href: '/verify' },
 			{ title: 'Pricing', href: '/pricing' },
-			{ title: 'How it works', href: '/how-it-works' },
+			{ title: 'Sharing Guide', href: '/sharing-guide' },
 			{ title: 'Plans', href: '/pricing' },
 		],
 	},
 	{
 		label: 'Company',
 		links: [
-			{ title: 'About', href: '/about' },
 			{ title: 'Contact', href: '/contact' },
 			{ title: 'Privacy Policy', href: '/privacy' },
 			{ title: 'Terms of Service', href: '/terms' },
+			{ title: 'Cookie Policy', href: '/cookie' },
+			{ title: 'Status', href: '/status' },
 		],
 	},
 	{
 		label: 'Resources',
 		links: [
 			{ title: 'History', href: '/history' },
-			{ title: 'Public reports', href: '/r' },
+			{ title: 'Public Reports', href: '/public-reports' },
 			{ title: 'Settings', href: '/settings' },
-			{ title: 'Help Center', href: '/help' },
+			{ title: 'Documentation', href: '/docs/fakeverifier-model' },
 		],
 	},
 ];

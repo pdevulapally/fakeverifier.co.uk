@@ -3,6 +3,7 @@
 import './globals.css';
 import CardNav from '@/components/CardNav';
 import { Footer as UiFooter } from '@/components/ui/footer-section';
+import CookieBanner from '@/components/CookieBanner';
 import '@/components/CardNav.css';
 import { usePathname } from 'next/navigation';
 import { AuthProvider } from '@/contexts/AuthContext';
@@ -54,6 +55,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             )}
             {children}
             {!isVerifyPage && <UiFooter />}
+            <CookieBanner />
           </ToastProvider>
         </AuthProvider>
       </body>
