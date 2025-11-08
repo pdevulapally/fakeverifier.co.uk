@@ -36,7 +36,8 @@ export default function CardNav({
   const [isExpanded, setIsExpanded] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [userPlan, setUserPlan] = useState('free');
-  const [buttonPosition, setButtonPosition] = useState({ top: 0, right: 0 });
+  const [buttonPosition, setButtonPosition] = useState({ top: 0, right: 0, left: 0 });
+  const [isMobile, setIsMobile] = useState(false);
   const navRef = useRef<HTMLDivElement | null>(null);
   const cardsRef = useRef<HTMLDivElement[]>([]);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
@@ -151,6 +152,16 @@ export default function CardNav({
     }
   }
 
+  // Detect mobile viewport
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.matchMedia('(max-width: 768px)').matches);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -183,10 +194,26 @@ export default function CardNav({
                    console.log('User profile clicked, current state:', userDropdownOpen);
                    if (buttonRef.current) {
                      const rect = buttonRef.current.getBoundingClientRect();
-                     setButtonPosition({
-                       top: rect.bottom + window.scrollY + 8,
-                       right: window.innerWidth - rect.right - window.scrollX
-                     });
+                     const dropdownWidth = 256; // w-64 = 256px
+                     
+                     if (isMobile) {
+                       // On mobile, align dropdown to the right edge of the button
+                       // Calculate left position to align right edge of dropdown with right edge of button
+                       const leftPosition = Math.max(8, rect.right - dropdownWidth);
+                       
+                       setButtonPosition({
+                         top: rect.bottom + window.scrollY + 8,
+                         right: 0,
+                         left: leftPosition
+                       });
+                     } else {
+                       // On desktop, use right positioning aligned to button
+                       setButtonPosition({
+                         top: rect.bottom + window.scrollY + 8,
+                         right: window.innerWidth - rect.right - window.scrollX,
+                         left: 0
+                       });
+                     }
                    }
                    setUserDropdownOpen(!userDropdownOpen);
                  }}
@@ -210,8 +237,12 @@ export default function CardNav({
                   style={{ 
                     position: 'fixed',
                     top: `${buttonPosition.top}px`,
-                    right: `${buttonPosition.right}px`,
+                    ...(isMobile 
+                      ? { left: `${buttonPosition.left}px`, right: 'auto' }
+                      : { right: `${buttonPosition.right}px`, left: 'auto' }
+                    ),
                     width: '256px',
+                    maxWidth: 'calc(100vw - 16px)',
                     backgroundColor: 'white',
                     border: '1px solid #e5e7eb',
                     borderRadius: '8px',
