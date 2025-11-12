@@ -150,6 +150,7 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  model?: string; // Store the model used for this message
 }
 
 interface Conversation {
@@ -205,6 +206,7 @@ function VerifyPage() {
   const [showAccessManagement, setShowAccessManagement] = useState(false);
   const [anonymousChatInfo, setAnonymousChatInfo] = useState<{ count: number; limit: number; remaining: number; showWarning: boolean } | null>(null);
   const [showLoginWarning, setShowLoginWarning] = useState(false);
+  const [lastUsedModel, setLastUsedModel] = useState<string | undefined>(undefined);
 
   // Sidebar defaults to closed - removed auto-open behavior
   // Sidebar is hidden for anonymous users
@@ -629,7 +631,8 @@ function VerifyPage() {
       id: Date.now().toString(),
       role: 'user',
       content: inputText,
-      timestamp: new Date()
+      timestamp: new Date(),
+      model: model // Store the model with the user message
     };
     if (!regenerate) {
       setMessages(prev => [...prev, userMessage]);
@@ -655,10 +658,26 @@ function VerifyPage() {
       const chatModelIds = ['llama', 'gpt-oss', 'maverick'];
       const isChatModel = chatModelIds.some(id => (model || '').toLowerCase().includes(id));
       if (isChatModel) {
+        const chatModel = model || 'llama-4-maverick-or';
+        // Track the model used for regenerate functionality
+        setLastUsedModel(chatModel);
+        
+        // When regenerating, add a unique identifier to force fresh response
+        // This ensures the model generates a new response instead of returning cached results
+        const chatMessage = regenerate 
+          ? `${inputText} [regenerate:${Date.now()}]`
+          : inputText;
+        
         const chatRes = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: inputText, userId: user?.uid || 'demo', history: [], model: model || 'llama-4-maverick-or' }),
+          body: JSON.stringify({ 
+            message: chatMessage, 
+            userId: user?.uid || 'demo', 
+            history: [], 
+            model: chatModel,
+            regenerate: regenerate || false
+          }),
         });
         const chatJson = await chatRes.json();
         
@@ -690,15 +709,49 @@ function VerifyPage() {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
           content: String(chatJson.result || ''),
-          timestamp: new Date()
+          timestamp: new Date(),
+          model: chatModel // Store the model used for this response
         };
-        setMessages(prev => [...prev, assistantMessage]);
+        
+        // Replace last assistant message if regenerating, otherwise add new one
+        if (regenerate) {
+          setMessages(prev => {
+            // Find the last assistant message index in the current state
+            const lastAssistantIdx = [...prev].map((m, idx) => ({m, idx})).reverse().find(x => x.m.role === 'assistant')?.idx;
+            if (lastAssistantIdx !== undefined) {
+              // Replace the message at that index, preserving the original ID
+              return prev.map((m, idx) => idx === lastAssistantIdx ? { ...assistantMessage, id: m.id } : m);
+            }
+            // If no assistant message found, just add the new one (shouldn't happen)
+            return [...prev, assistantMessage];
+          });
+        } else {
+          setMessages(prev => [...prev, assistantMessage]);
+        }
         await processAutoMemories(inputText, assistantMessage.content);
         if (targetConversationId && user) {
-          await fetch(`/api/conversations/${targetConversationId}/messages`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ uid: user.uid, message: assistantMessage })
-          });
+          if (regenerate) {
+            // Update last assistant message in DB when regenerating
+            // Find the last assistant message to get its ID
+            const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
+            if (lastAssistant) {
+              await fetch(`/api/conversations/${targetConversationId}/messages`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  uid: user.uid,
+                  messageId: lastAssistant.id,
+                  content: assistantMessage.content
+                })
+              });
+            }
+          } else {
+            // Add new message to DB
+            await fetch(`/api/conversations/${targetConversationId}/messages`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ uid: user.uid, message: assistantMessage })
+            });
+          }
         }
         setLoading(false);
         return;
@@ -714,16 +767,8 @@ function VerifyPage() {
         }
       }
 
-      // Start timeline SSE in parallel
-      const sseUrl = `/api/verify/stream?q=${encodeURIComponent(inputText)}${user?.uid ? `&uid=${encodeURIComponent(user.uid)}` : ''}`;
-      const evts = new EventSource(sseUrl);
-      evts.onmessage = (ev) => {
-        try {
-          const obj = JSON.parse(ev.data);
-          setTimeline((prev) => [...prev, obj]);
-          if (obj.stage === 'verdict') evts.close();
-        } catch {}
-      };
+      // Timeline SSE is no longer needed - OpenAI Agent Builder has its own timeline
+      // Removed HuggingFace stream endpoint
 
       // Prepare memories context
       const memoriesContext = memories.length > 0 
@@ -733,6 +778,9 @@ function VerifyPage() {
       // Ensure model is explicitly set to OpenAI Agent Builder if not provided
       const selectedModel = model || 'openai-agent-builder';
       console.log('Sending verification request with model:', selectedModel);
+      
+      // Track the model used for regenerate functionality
+      setLastUsedModel(selectedModel);
       
       const r = await fetch('/api/verify', { 
         method: 'POST', 
@@ -745,6 +793,7 @@ function VerifyPage() {
             context: recent + memoriesContext 
           },
           nocache: true,
+          regenerate: regenerate || false, // Pass regenerate flag to API
           model: selectedModel,
           imageBase64Array: imageBase64Array
         })
@@ -752,16 +801,26 @@ function VerifyPage() {
       const j = await r.json();
       
       if (r.ok) {
-        // find last assistant index for regenerate
-        const lastAssistantIndex = [...messages].map((m, idx) => ({m, idx})).reverse().find(x => x.m.role === 'assistant')?.idx;
         const assistantMessage: Message = {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
           content: (j.messageMarkdown as string) || `**Verdict:** ${j.verdict}\n**Confidence:** ${j.confidence}%\n\n**Why:**\n${j.explanation}`,
-          timestamp: new Date()
+          timestamp: new Date(),
+          model: selectedModel // Store the model used for this response
         };
-        if (regenerate && lastAssistantIndex !== undefined) {
-          setMessages(prev => prev.map((m, idx) => idx === lastAssistantIndex ? { ...assistantMessage, id: m.id } : m));
+        
+        // Replace last assistant message if regenerating, otherwise add new one
+        if (regenerate) {
+          setMessages(prev => {
+            // Find the last assistant message index in the current state
+            const lastAssistantIdx = [...prev].map((m, idx) => ({m, idx})).reverse().find(x => x.m.role === 'assistant')?.idx;
+            if (lastAssistantIdx !== undefined) {
+              // Replace the message at that index, preserving the original ID
+              return prev.map((m, idx) => idx === lastAssistantIdx ? { ...assistantMessage, id: m.id } : m);
+            }
+            // If no assistant message found, just add the new one (shouldn't happen)
+            return [...prev, assistantMessage];
+          });
         } else {
           setMessages(prev => [...prev, assistantMessage]);
         }
@@ -771,18 +830,21 @@ function VerifyPage() {
         
         // Save assistant message to conversation
         if (targetConversationId && user) {
-          if (regenerate && lastAssistantIndex !== undefined) {
-            // Update last assistant message in DB
-            const lastAssistant = [...messages][lastAssistantIndex];
-            await fetch(`/api/conversations/${targetConversationId}/messages`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                uid: user.uid,
-                messageId: lastAssistant.id,
-                content: assistantMessage.content
-              })
-            });
+          if (regenerate) {
+            // Update last assistant message in DB when regenerating
+            // Find the last assistant message to get its ID
+            const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
+            if (lastAssistant) {
+              await fetch(`/api/conversations/${targetConversationId}/messages`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  uid: user.uid,
+                  messageId: lastAssistant.id,
+                  content: assistantMessage.content
+                })
+              });
+            }
           } else {
             await fetch(`/api/conversations/${targetConversationId}/messages`, {
               method: 'POST',
@@ -1013,7 +1075,22 @@ function VerifyPage() {
     if (!messages.length) return;
     const lastUser = [...messages].reverse().find(m => m.role === 'user');
     if (!lastUser) return;
-    await onVerify(lastUser.content, undefined, undefined, true);
+    
+    // Find the last assistant message (the one we're regenerating) to get the model used
+    const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
+    
+    // Get the model from the last assistant message (what we're regenerating),
+    // or from the last user message, or fallback to lastUsedModel
+    const modelToUse = lastAssistant?.model || lastUser.model || lastUsedModel;
+    
+    console.log('Regenerate - Model lookup:', {
+      lastAssistantModel: lastAssistant?.model,
+      lastUserModel: lastUser.model,
+      lastUsedModel: lastUsedModel,
+      finalModel: modelToUse
+    });
+    
+    await onVerify(lastUser.content, modelToUse, undefined, true);
   }
 
   // Edit message functions
@@ -1055,7 +1132,10 @@ function VerifyPage() {
     }
 
     // Regenerate response with the edited content (replace last assistant)
-    await onVerify(editingContent.trim(), undefined, undefined, true);
+    // Get the model from the edited message, or fallback to lastUsedModel
+    const messageToEdit = messages.find(m => m.id === editingMessageId);
+    const modelToUse = messageToEdit?.model || lastUsedModel;
+    await onVerify(editingContent.trim(), modelToUse, undefined, true);
     
     // Clear editing state
     cancelMessageEditing();

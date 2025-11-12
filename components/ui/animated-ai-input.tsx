@@ -125,12 +125,6 @@ const getAvailableModels = (userPlan: string, isAnonymous: boolean = false): Mod
     return [
       ...baseModels,
       {
-        id: "fakeverifier-hf",
-        name: "FakeVerifier (Classifier)",
-        description: "Short factual verdicts with confidence",
-        badge: "Fast",
-      },
-      {
         id: "llama-4-maverick-or",
         name: "Llama 4 Maverick",
         description: "Advanced conversational AI via OpenRouter",
@@ -149,12 +143,6 @@ const getAvailableModels = (userPlan: string, isAnonymous: boolean = false): Mod
   // Free plan users get Llama 4 Maverick as an option
   return [
     ...baseModels,
-    {
-      id: "fakeverifier-hf",
-      name: "FakeVerifier (Classifier)",
-      description: "Short factual verdicts with confidence",
-      badge: "Fast",
-    },
     {
       id: "llama-4-maverick-or",
       name: "Llama 4 Maverick",

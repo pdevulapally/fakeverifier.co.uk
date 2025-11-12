@@ -62,10 +62,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // Add message to conversation
     const currentMessages = conversation.data()?.messages || [];
     const newMessage = {
-      id: Date.now().toString(),
+      id: message.id || Date.now().toString(), // Use provided ID or generate new one
       role: message.role,
       content: message.content,
-      timestamp: new Date()
+      timestamp: message.timestamp ? (message.timestamp instanceof Date ? message.timestamp : new Date(message.timestamp)) : new Date(),
+      model: message.model // Preserve the model field if present
     };
 
     // Derive a title if needed

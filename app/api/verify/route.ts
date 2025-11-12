@@ -1,9 +1,7 @@
 import { NextRequest } from 'next/server';
-// Replaced complex OpenAI-based pipeline with HF FakeVerifier client
 import { ensureQuota } from '@/lib/quota';
 import { db } from '@/lib/firebaseAdmin';
 import { fetchWithRetry, logNetworkError, getErrorMessage } from '@/lib/network-utils';
-import { verifyClaim, parseFakeVerifierOutput } from '@/lib/fakeVerifierClient';
 import { runWorkflow } from '@/lib/openaiAgent';
 
 // 🔹 Helper to extract <title> from HTML for dynamic source naming
@@ -168,7 +166,7 @@ ${evidenceSection}${sourcesSection}${followupSection}`.trim();
 // 🔹 Main verify route
 export async function POST(req: NextRequest) {
   try {
-    const { uid, input, context, model, imageBase64Array } = await req.json();
+    const { uid, input, context, model, imageBase64Array, regenerate } = await req.json();
     // Quota: charge 1 token per verification
     try {
       if (uid) await ensureQuota(uid, 1);
@@ -324,8 +322,17 @@ export async function POST(req: NextRequest) {
           }, timeoutDuration);
         });
         
+        // When regenerating, add a unique timestamp to force fresh response
+        // This bypasses any caching mechanisms
+        const inputText = regenerate 
+          ? `${input.raw} [regenerate:${Date.now()}]`
+          : input.raw;
+        
         const agentResponse = await Promise.race([
-          runWorkflow({ input_as_text: input.raw }),
+          runWorkflow({ 
+            input_as_text: inputText,
+            regenerate: regenerate || false
+          }),
           timeoutPromise
         ]) as any;
         
@@ -467,53 +474,21 @@ export async function POST(req: NextRequest) {
           hasOpenAIKey: !!process.env.OPENAI_API_KEY
         });
         openAISucceeded = false;
-        // Always fallback to HuggingFace instead of returning error
-        // This ensures free plan users and users with network issues get a response
+        // If OpenAI fails, return error instead of falling back to HuggingFace
+        console.error('OpenAI Agent Builder failed:', error);
       }
     }
 
-    // Use Hugging Face FakeVerifier model if selected, or as fallback if OpenAI fails
-    if (selectedModel === 'fakeverifier-hf' || !useOpenAI || !openAISucceeded) {
-      try {
-        const hfOutput = await verifyClaim(primaryClaim);
-        const parsed = parseFakeVerifierOutput(hfOutput);
-
-        // Build minimal response preserving frontend expectations
-        const defaultFollowUps = [
-          'What additional evidence could strengthen this conclusion?',
-          'Are there any sources that contradict these findings?',
-          'How recent is this information?',
-          'Could the claim be interpreted differently in another context?',
-        ];
-
-        const result = {
-          verdict: parsed.verdict || 'Unknown',
-          confidence: parsed.confidence || 0,
-          explanation: parsed.raw,
-          sources: [],
-          evidenceSnippets: [],
-          followUps: await generateFollowUps(primaryClaim, input?.context || '') || defaultFollowUps,
-          messageMarkdown: parsed.raw,
-          modelUsed: { vendor: 'huggingface', name: 'fakeverifier-app' },
-          cost: {},
-        };
-
-        return new Response(JSON.stringify(result), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
-        });
-      } catch (hfError: any) {
-        // If HuggingFace also fails, return a user-friendly error instead of hanging
-        logNetworkError(hfError, 'HuggingFace Fallback', 'verifyClaim');
-        return new Response(
-          JSON.stringify({ 
-            error: 'Service temporarily unavailable',
-            message: 'We encountered an issue processing your request. Please try again in a moment.',
-            modelUsed: { vendor: 'error', name: 'fallback-failed' }
-          }),
-          { status: 503, headers: { 'Content-Type': 'application/json' } }
-        );
-      }
+    // If OpenAI failed and we don't have a successful result, return error
+    if (!useOpenAI || !openAISucceeded) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Service temporarily unavailable',
+          message: 'The verification service encountered an issue. Please try again in a moment.',
+          modelUsed: { vendor: 'error', name: 'openai-failed' }
+        }),
+        { status: 503, headers: { 'Content-Type': 'application/json' } }
+      );
     }
 
     // Safety fallback: if we somehow reach here without returning, return error
