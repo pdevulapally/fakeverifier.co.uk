@@ -34,7 +34,7 @@ function buildProMessages(user: string, evidence: EvidenceItem[], history: any[]
   const pref = preferenceHint ? `${preferenceHint}\n\n` : '';
   const sys = `${pref}You are FakeVerifier, a helpful, multilingual assistant.
 For general chat: be conversational and concise.
-For fact-checking: ONLY cite links from the provided Evidence. Never invent URLs. Prefer short citations like [1], [2] and include a Sources list at the end matching those indices.`;
+For fact-checking: Use the provided Evidence to inform your response. Reference the evidence naturally in your answer, but DO NOT include a Sources section or list URLs directly - sources will be added automatically.`;
   const strictness = `\nAnswer ONLY what is asked. If the user asks for a single specific detail (e.g., "When is my birthday?"), reply with just that detail in one short sentence. Do not restate profile details unless explicitly requested.`;
   const evText = evidence.length ? `\n\nEvidence:\n${evidence.map((e, i) => `- [${i+1}] ${e.title || e.link || 'Source'}: ${e.link || ''} — ${e.snippet || ''}`).join('\n')}` : '';
   const msgs = [
@@ -58,6 +58,77 @@ function isFactCheckIntent(text: string): boolean {
   if (/https?:\/\//.test(t)) return true;
   const keys = ['verify','fact','fact-check','fact check','true or false','is this true','fake','misinformation','disinformation','headline','news','rumor','hoax','credible','source'];
   return keys.some(k => t.includes(k));
+}
+
+function needsRealTimeInfo(text: string, history: any[] = []): boolean {
+  const originalText = (text || '').trim();
+  const t = originalText.toLowerCase();
+  
+  // Skip very short messages (likely greetings or acknowledgments)
+  if (originalText.length < 10) return false;
+  
+  // Skip simple greetings and personal pleasantries
+  const greetingPattern = /^(hi|hello|hey|thanks|thank you|bye|goodbye|ok|okay|yes|no|sure|alright)\s*[!?.]*$/i;
+  if (greetingPattern.test(originalText)) return false;
+  
+  // Always search for URLs
+  if (/https?:\/\//.test(originalText)) return true;
+  
+  // Dynamic analysis based on query characteristics
+  
+  // 1. Check if query contains proper nouns/capitalized entities (likely factual claims)
+  const properNounCount = (originalText.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g) || []).length;
+  if (properNounCount >= 2) return true; // Multiple entities suggest factual query
+  
+  // 2. Check for numbers (years, dates, statistics) - likely need verification
+  const hasNumbers = /\d/.test(originalText);
+  const hasRecentYear = /\b(20[0-3][0-9])\b/.test(originalText);
+  if (hasRecentYear || (hasNumbers && originalText.length > 20)) return true;
+  
+  // 3. Check if it's a question (questions often need current info)
+  const isQuestion = originalText.trim().endsWith('?');
+  if (isQuestion && originalText.length > 15) return true;
+  
+  // 4. Check for factual claim patterns (statements about events, results, news)
+  // Look for verb patterns that suggest events: won, happened, announced, etc.
+  const eventVerbs = /\b(won|happened|happening|announced|released|published|declared|confirmed|reported|said|stated)\b/i;
+  if (eventVerbs.test(originalText) && originalText.length > 20) return true;
+  
+  // 5. Check conversation context - follow-ups in ongoing conversations need verification
+  if (history.length > 0) {
+    // If there's history and this is a follow-up (short response, correction, or continuation)
+    const isFollowUp = originalText.length < 50 || 
+                      /^(yes|no|correct|wrong|actually|i mean|i meant|but|however|also|and|or|well|so)\b/i.test(originalText) ||
+                      /^(that|this|it|they|we|you)\b/i.test(originalText);
+    if (isFollowUp) return true;
+    
+    // If previous messages had evidence, this follow-up likely needs it too
+    const lastUserMsg = history.filter((m: any) => m.role === 'user').pop();
+    const lastAssistantMsg = history.filter((m: any) => m.role === 'assistant').pop();
+    if (lastAssistantMsg && lastAssistantMsg.content && 
+        (lastAssistantMsg.content.includes('Source') || lastAssistantMsg.content.includes('http'))) {
+      return true;
+    }
+  }
+  
+  // 6. Check for substantive content (not personal statements)
+  // Personal statements usually start with "I", "My", "I'm" and are about feelings/opinions
+  const isPersonalStatement = /^(i |my |i'm |i've |i'll |i'd |me |myself )/i.test(originalText);
+  const isOpinion = /\b(i think|i feel|i believe|i like|i prefer|i want|i need|my opinion|in my view)\b/i.test(originalText);
+  
+  // If it's substantive (long enough) and not clearly personal, search
+  if (originalText.length > 25 && !isPersonalStatement && !isOpinion) return true;
+  
+  // 7. Check for factual content indicators (organizations, places, people, events)
+  // Multiple capitalized words or specific patterns suggest factual claims
+  if (originalText.length > 30) {
+    const wordCount = originalText.split(/\s+/).length;
+    const capitalizedWords = (originalText.match(/\b[A-Z][a-z]+\b/g) || []).length;
+    // If more than 20% of words are capitalized, likely factual
+    if (capitalizedWords > 0 && (capitalizedWords / wordCount) > 0.15) return true;
+  }
+  
+  return false;
 }
 
 function getBaseUrl() {
@@ -105,16 +176,102 @@ function extractMemories(userMessage: string, assistantReply: string) {
   return memories;
 }
 
+function getShortLinkName(item: EvidenceItem): string {
+  // Try to get a short, readable name from title
+  if (item.title) {
+    // Clean up title - remove extra whitespace, truncate if too long
+    let name = item.title.trim();
+    // Remove common prefixes/suffixes
+    name = name.replace(/^[-|•]\s*/, '').replace(/\s*[-|•]$/, '');
+    // If title is reasonable length, use it
+    if (name.length > 0 && name.length <= 60) {
+      return name;
+    }
+    // If too long, truncate intelligently
+    if (name.length > 60) {
+      // Try to truncate at word boundary
+      const truncated = name.substring(0, 57);
+      const lastSpace = truncated.lastIndexOf(' ');
+      return lastSpace > 30 ? truncated.substring(0, lastSpace) + '...' : truncated + '...';
+    }
+  }
+  
+  // Fallback to domain name from URL
+  if (item.link) {
+    try {
+      const url = new URL(item.link);
+      let hostname = url.hostname.replace(/^www\./, '');
+      // Remove TLD for shorter display (e.g., "example.com" -> "example")
+      const parts = hostname.split('.');
+      if (parts.length > 2) {
+        hostname = parts.slice(-2).join('.');
+      }
+      return hostname;
+    } catch {
+      // If URL parsing fails, use a short version of the link
+      return item.link.length > 40 ? item.link.substring(0, 37) + '...' : item.link;
+    }
+  }
+  
+  return 'Source';
+}
+
 function sanitizeReplyWithEvidence(text: string, evidence: EvidenceItem[]) {
-  const allowed = new Set((evidence || []).map(e => (e.link || '').trim()).filter(Boolean));
-  const urlRe = /https?:\/\/[^\s)]+/g;
   let sanitized = String(text || '');
-  sanitized = sanitized.replace(urlRe, (u) => (allowed.has(u) ? u : ''));
-  // Build sources block from evidence to avoid hallucinated links
+  
+  // Remove any existing sources sections in various formats
+  // This handles patterns like:
+  // "Sources:\nhttps://..." 
+  // "**Sources:**\n..."
+  // "[1] Title — https://..."
+  const sourcesPatterns = [
+    /\n\s*Sources:\s*\n(?:(?:https?:\/\/[^\n]+)\n?)+/gi,          // "Sources:\nhttp://...\nhttp://..."
+    /\n\s*\*\*Sources:\*\*\s*\n[\s\S]*?(?=\n\n|\n$|$)/gi,        // "**Sources:**\n..."
+    /\n\s*\[Sources\]\s*\n[\s\S]*?(?=\n\n|\n$|$)/gi,            // "[Sources]\n..."
+    /\n\s*\[?\d+\]?\s*[^\n]*https?:\/\/[^\n]+/gi,                // "[1] Title — http://..."
+  ];
+  
+  sourcesPatterns.forEach(pattern => {
+    sanitized = sanitized.replace(pattern, '');
+  });
+  
+  // Remove raw URLs that appear on their own lines (standalone URLs)
+  sanitized = sanitized.split('\n').filter(line => {
+    const trimmed = line.trim();
+    // Remove lines that are just URLs
+    if (/^https?:\/\/[^\s]+$/.test(trimmed)) {
+      return false;
+    }
+    return true;
+  }).join('\n');
+  
+  // Remove inline standalone URLs (but keep markdown links [text](url))
+  const urlRe = /https?:\/\/[^\s)]+/g;
+  sanitized = sanitized.replace(urlRe, (url, offset) => {
+    // Check if this URL is part of a markdown link
+    const before = sanitized.substring(Math.max(0, offset - 100), offset);
+    const after = sanitized.substring(offset, Math.min(sanitized.length, offset + url.length + 50));
+    
+    // If it's inside [text](url) format, keep it
+    if (before.match(/\[.*?\]\s*\($/) && after.startsWith(')')) {
+      return url;
+    }
+    // Otherwise remove it
+    return '';
+  });
+  
+  // Clean up multiple newlines
+  sanitized = sanitized.replace(/\n{3,}/g, '\n\n');
+  
+  // Build sources block with clickable markdown links
   if (evidence && evidence.length) {
-    const sources = `\n\nSources:\n${evidence.map((e, i) => `[${i+1}] ${e.title || e.link} — ${e.link}`).join('\n')}`;
-    // Ensure sources are present once
-    if (!/\nSources:\n/i.test(sanitized)) sanitized += sources;
+    const sources = `\n\n**Sources:**\n${evidence.map((e, i) => {
+      const shortName = getShortLinkName(e);
+      const url = e.link || '';
+      return `${i + 1}. [${shortName}](${url})`;
+    }).join('\n')}`;
+    // Add sources at the end
+    sanitized += sources;
   }
   return sanitized.trim();
 }
@@ -209,8 +366,12 @@ export async function POST(req: NextRequest) {
       let evidence = [] as any[];
       try { evidence = await aggregateEvidence(text); } catch {}
     if (evidence.length) {
-      // Attach a Sources block instead of inline URLs to avoid hallucinations
-      result += `\n\nSources:\n${evidence.map((e: any, i: number) => `[${i+1}] ${e.title || e.link} — ${e.link}`).join('\n')}`;
+      // Attach a Sources block with clickable markdown links
+      result += `\n\nSources:\n${evidence.map((e: any, i: number) => {
+        const shortName = getShortLinkName(e);
+        const url = e.link || '';
+        return `${i + 1}. [${shortName}](${url})`;
+      }).join('\n')}`;
     }
       // fire-and-forget auto-memories
       saveAutoMemories((userId || '').toString(), text, result);
@@ -221,7 +382,8 @@ export async function POST(req: NextRequest) {
     }
 
     // Pro / Enterprise path (including anonymous Llama access)
-    const needsEvidence = isFactCheckIntent(text);
+    // For chat models, always check if real-time information is needed
+    const needsEvidence = needsRealTimeInfo(text, Array.isArray(history) ? history : []);
     const evidence = needsEvidence ? await aggregateEvidence(text) : [];
     const pref = await getUserPreferenceHint((userId || '').toString());
     const userMems = await getUserMemories((userId || '').toString());
@@ -229,7 +391,7 @@ export async function POST(req: NextRequest) {
     const msgs = buildProMessages(text + memText, evidence, Array.isArray(history) ? history : [], pref);
     // Pass the model ID to route to correct provider (modelId already declared above)
     let reply = await withRetry(() => callLlamaChat(msgs, modelId));
-    if (needsEvidence) reply = sanitizeReplyWithEvidence(reply, evidence);
+    if (needsEvidence && evidence.length > 0) reply = sanitizeReplyWithEvidence(reply, evidence);
     // fire-and-forget auto-memories
     saveAutoMemories((userId || '').toString(), text, reply);
     

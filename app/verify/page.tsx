@@ -404,24 +404,34 @@ function VerifyPage() {
     // bold **text**
     html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
     // links [text](url)
-    html = html.replace(/\[(.+?)\]\((https?:[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="underline">$1</a>');
+    html = html.replace(/\[(.+?)\]\((https?:[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="underline text-blue-600 hover:text-blue-800">$1</a>');
     // angle links <url>
-    html = html.replace(/&lt;(https?:[^\s]+)&gt;/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="underline">$1</a>');
-    // simple lists starting with - 
+    html = html.replace(/&lt;(https?:[^\s]+)&gt;/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="underline text-blue-600 hover:text-blue-800">$1</a>');
+    // numbered lists (1. 2. 3. etc.) and bullet lists (-)
     const lines = html.split(/\r?\n/);
-    let inList = false;
+    let inBulletList = false;
+    let inNumberedList = false;
     const out: string[] = [];
     for (const line of lines) {
-      const m = line.match(/^\s*-\s+(.*)/);
-      if (m) {
-        if (!inList) { out.push('<ul class="list-disc pl-6">'); inList = true; }
-        out.push(`<li>${m[1]}</li>`);
+      const bulletMatch = line.match(/^\s*-\s+(.*)/);
+      const numberedMatch = line.match(/^\s*(\d+)\.\s+(.*)/);
+      
+      if (bulletMatch) {
+        if (inNumberedList) { out.push('</ol>'); inNumberedList = false; }
+        if (!inBulletList) { out.push('<ul class="list-disc pl-6 my-2">'); inBulletList = true; }
+        out.push(`<li>${bulletMatch[1]}</li>`);
+      } else if (numberedMatch) {
+        if (inBulletList) { out.push('</ul>'); inBulletList = false; }
+        if (!inNumberedList) { out.push('<ol class="list-decimal pl-6 my-2">'); inNumberedList = true; }
+        out.push(`<li>${numberedMatch[2]}</li>`);
       } else {
-        if (inList) { out.push('</ul>'); inList = false; }
+        if (inBulletList) { out.push('</ul>'); inBulletList = false; }
+        if (inNumberedList) { out.push('</ol>'); inNumberedList = false; }
         out.push(line);
       }
     }
-    if (inList) out.push('</ul>');
+    if (inBulletList) out.push('</ul>');
+    if (inNumberedList) out.push('</ol>');
     // join with <br/>
     html = out.join('\n').replace(/\n/g, '<br/>');
     return html;
@@ -634,6 +644,27 @@ function VerifyPage() {
       timestamp: new Date(),
       model: model // Store the model with the user message
     };
+    
+    // Build conversation history from previous messages BEFORE adding current user message
+    // This ensures we don't duplicate the current message in history
+    // Format: [{ role: 'user', content: '...' }, { role: 'assistant', content: '...' }]
+    let conversationHistory: Array<{ role: string; content: string }> = [];
+    if (messages.length > 0) {
+      // If regenerating, exclude the last assistant message since we're regenerating it
+      const messagesToInclude = regenerate 
+        ? messages.slice(0, -1) // Remove last message (assistant response being regenerated)
+        : messages;
+      
+      // Convert messages to history format, limit to last 20 messages to avoid token limits
+      conversationHistory = messagesToInclude
+        .slice(-20)
+        .map(m => ({
+          role: m.role,
+          content: m.content
+        }))
+        .filter(m => m.role === 'user' || m.role === 'assistant'); // Only include user and assistant messages
+    }
+    
     if (!regenerate) {
       setMessages(prev => [...prev, userMessage]);
     }
@@ -651,7 +682,7 @@ function VerifyPage() {
         });
       }
 
-      // Build lightweight context from recent turns to help follow-ups
+      // Building lightweight context from recent turns to help follow-ups
       const recent = messages.slice(-6).map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n');
 
       // If user selected a chat model (llama, gpt-oss, maverick), route to unified /api/chat
@@ -659,11 +690,11 @@ function VerifyPage() {
       const isChatModel = chatModelIds.some(id => (model || '').toLowerCase().includes(id));
       if (isChatModel) {
         const chatModel = model || 'llama-4-maverick-or';
-        // Track the model used for regenerate functionality
+        // Tracking the model used for regenerate functionality
         setLastUsedModel(chatModel);
         
-        // When regenerating, add a unique identifier to force fresh response
-        // This ensures the model generates a new response instead of returning cached results
+        // When regenerating, adding a unique identifier to force fresh response
+        // This ensures that the model generates a new response instead of returning the cached results
         const chatMessage = regenerate 
           ? `${inputText} [regenerate:${Date.now()}]`
           : inputText;
@@ -674,7 +705,7 @@ function VerifyPage() {
           body: JSON.stringify({ 
             message: chatMessage, 
             userId: user?.uid || 'demo', 
-            history: [], 
+            history: conversationHistory, 
             model: chatModel,
             regenerate: regenerate || false
           }),
