@@ -38,7 +38,10 @@ export async function POST(req: NextRequest) {
     const headerUid = (req.headers.get('x-uid') || '').toString();
     const cookieUid = getCookie('uid', req.headers.get('cookie'));
     const uid = (body?.uid || headerUid || cookieUid || '').toString();
-    if (!uid) return new Response(JSON.stringify({ error: 'Missing uid' }), { status: 400 });
+    // Reject anonymous users - no memories for anonymous/free users
+    if (!uid || uid === 'demo' || uid === '') {
+      return new Response(JSON.stringify({ error: 'Memories are not available for anonymous users' }), { status: 403 });
+    }
 
     // Mode A: direct memories payload (uid + items/memories)
     const items = normalizeItems(body);

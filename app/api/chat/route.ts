@@ -17,7 +17,8 @@ async function getUserPlan(uid: string): Promise<'free' | 'pro' | 'enterprise'> 
 
 async function getUserPreferenceHint(uid: string): Promise<string> {
   try {
-    if (!uid || !db) return '';
+    // Don't fetch preferences for anonymous users
+    if (!uid || uid === 'demo' || uid === '' || !db) return '';
     const ref = db.collection('preferences').doc(uid);
     const snap = await ref.get();
     const data = (snap.exists ? (snap.data() as any) : {}) || {};
@@ -68,7 +69,8 @@ function getBaseUrl() {
 }
 
 async function saveAutoMemories(uid: string, userMessage: string, assistantReply: string) {
-  if (!uid) return;
+  // Don't save memories for anonymous users
+  if (!uid || uid === 'demo' || uid === '') return;
   try {
     const base = getBaseUrl();
     const items = extractMemories(userMessage, assistantReply).slice(0, 5);
@@ -119,7 +121,8 @@ function sanitizeReplyWithEvidence(text: string, evidence: EvidenceItem[]) {
 
 async function getUserMemories(uid: string): Promise<string[]> {
   try {
-    if (!db || !uid) return [];
+    // Don't fetch memories for anonymous users
+    if (!db || !uid || uid === 'demo' || uid === '') return [];
     const snap = await db
       .collection('users')
       .doc(uid)
