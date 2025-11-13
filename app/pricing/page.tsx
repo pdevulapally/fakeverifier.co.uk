@@ -1,155 +1,15 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Check, Sparkles, Shield, Zap } from "lucide-react";
-import { useAuth } from "@/contexts/AuthContext";
+import { Sparkles, Shield, Zap } from "lucide-react";
+import PricingSection4 from "@/components/ui/pricing-section-4";
 
 export default function PricingPage() {
-  const router = useRouter();
-  const { user } = useAuth();
-  const clientToken = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? (crypto as any).randomUUID() : `${Date.now()}-token`;
-  const plans = [
-    {
-      id: "free",
-      name: "Free",
-      price: "$0",
-      period: "/mo",
-      cta: "Get started",
-      features: ["100 monthly credits", "20 verifications/day", "Up to 1 image per verification", "Basic sources", "Markdown report"],
-      style: { borderColor: "var(--border)", background: "linear-gradient(180deg, rgba(255,255,255,0.6), rgba(255,255,255,0.3))" },
-      buttonStyle: { background: "var(--muted)", color: "var(--foreground)" },
-    },
-    {
-      id: "pro",
-      name: "Pro",
-      price: "$9.99",
-      period: "/mo",
-      cta: "Upgrade to Pro",
-      blurb: "Great for power users",
-      tokens: "2,000 tokens per month",
-      features: [
-        "2,000 verification tokens per month",
-        "200 verifications per day",
-        "Up to 3 images per verification",
-        "Premium AI models (GPT-4o, GPT-4 Turbo, GPT-4)",
-        "Faster response time",
-        "Priority support",
-        "Custom source verification",
-        "Real-time news integration",
-        "Advanced bias detection",
-        "Email & chat support",
-        "No rate limits",
-        "Premium AI performance"
-      ],
-      highlighted: true,
-      style: { borderColor: "var(--primary)", background: "linear-gradient(180deg, rgba(59,130,246,0.12), rgba(59,130,246,0.02))" },
-      buttonStyle: { background: "var(--primary)", color: "var(--primary-foreground)" },
-    },
-    {
-      id: "enterprise",
-      name: "Enterprise",
-      price: "$49.99",
-      period: "/month",
-      cta: "Contact sales",
-      blurb: "For teams and organizations",
-      tokens: "Unlimited tokens",
-      features: [
-        "Unlimited verification tokens",
-        "Unlimited daily verifications",
-        "Up to 10 images per verification",
-        "Unlimited AI analysis with Claude-3.5-Sonnet & GPT-4o",
-        "Instant response time",
-        "Dedicated support",
-        "Custom integrations",
-        "Team management",
-        "Advanced analytics",
-        "White-label options",
-        "Phone & priority support",
-        "No rate limits",
-        "Highest AI performance for the enterprise"
-      ],
-      style: { borderColor: "var(--border)", background: "linear-gradient(180deg, rgba(168,85,247,0.12), rgba(168,85,247,0.02))" },
-      buttonStyle: { background: "var(--accent)", color: "var(--accent-foreground)" },
-    },
-  ];
-
   return (
-    <div className="min-h-screen" style={{ background: "radial-gradient(1200px 600px at 50% -200px, rgba(59,130,246,0.12), transparent), var(--background)", color: "var(--foreground)" }}>
-      <div className="mx-auto max-w-6xl px-4 pt-32 pb-12">
-        <div className="text-center mb-10">
-          <h1 className="text-3xl font-bold">Pricing</h1>
-          <p className="mt-2 text-sm" style={{ color: "var(--muted-foreground)" }}>
-            Upgrade whenever you need. Cancel anytime.
-          </p>
-        </div>
+    <div className="min-h-screen" style={{ background: "var(--background)", color: "var(--foreground)" }}>
+      <PricingSection4 />
 
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-          {plans.map((p) => (
-            <Card
-              key={p.id}
-              className={`relative p-6 transition-transform duration-300 hover:-translate-y-1 ${p.highlighted ? "ring-2" : "ring-1"} flex flex-col`}
-              style={{ ...p.style, borderColor: p.highlighted ? "var(--primary)" : "var(--border)" }}
-            >
-              {p.highlighted && (
-                <div className="absolute -top-3 right-4 rounded-full px-3 py-1 text-[11px] font-semibold shadow" style={{ background: 'var(--primary)', color: 'var(--primary-foreground)' }}>
-                  Most Popular
-                </div>
-              )}
-              <div className="mb-4">
-                <h2 className="text-lg font-semibold">{p.name}</h2>
-                <div className="mt-2 flex items-baseline gap-1">
-                  <span className="text-3xl font-bold">{p.price}</span>
-                  <span className="text-sm" style={{ color: "var(--muted-foreground)" }}>{p.period}</span>
-                </div>
-                {p.blurb && <p className="mt-1 text-sm" style={{ color: "var(--muted-foreground)" }}>{p.blurb}</p>}
-                {p.tokens && <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>{p.tokens}</p>}
-                {user?.plan === p.id && (
-                  <div className="mt-2 inline-flex rounded-full px-2.5 py-0.5 text-[11px]" style={{ background: 'var(--muted)', color: 'var(--muted-foreground)' }}>Current plan</div>
-                )}
-              </div>
-              <ul className="mb-6 space-y-2 text-sm">
-                {p.features.map((f) => (
-                  <li key={f} className="flex items-start gap-2">
-                    <Check className="mt-0.5 h-4 w-4" style={{ color: 'var(--primary)' }} />
-                    <span>{f}</span>
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-auto" />
-              {p.id === "enterprise" ? (
-                <Button
-                  style={p.buttonStyle}
-                  className="w-full shadow-md hover:shadow-lg"
-                  onClick={() => router.push('/contact')}
-                >
-                  {p.cta}
-                </Button>
-              ) : (
-                <Button
-                  style={p.buttonStyle}
-                  className="w-full shadow-md hover:shadow-lg"
-                  onClick={async () => {
-                    try {
-                      const r = await fetch('/api/stripe/checkout', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'x-client-token': clientToken },
-                        body: JSON.stringify({ plan: p.id, uid: user?.uid || 'anonymous', success_url: window.location.origin + '/pricing?success=true', cancel_url: window.location.href })
-                      });
-                      const j = await r.json();
-                      if (r.ok && j.url) window.location.href = j.url;
-                    } catch {}
-                  }}
-                >
-                  {p.cta}
-                </Button>
-              )}
-            </Card>
-          ))}
-        </div>
-
+      <div className="mx-auto max-w-6xl px-4 pb-12 relative z-10">
         {/* Why choose FakeVerifier */}
         <section className="mt-16">
           <div className="mx-auto max-w-3xl text-center">
@@ -158,7 +18,7 @@ export default function PricingPage() {
             <p className="mt-2 text-sm" style={{ color: "var(--muted-foreground)" }}>Production‑ready verification with transparent reasoning and enterprise‑grade controls.</p>
           </div>
           <div className="mt-8 grid gap-5 md:grid-cols-3">
-                {[{
+            {[{
               title: 'Real-time evidence',
               desc: 'Live news retrieval, source deduplication, and citation-rich output.',
               icon: <Zap className="h-5 w-5" style={{ color: 'var(--primary)' }} />
@@ -171,7 +31,7 @@ export default function PricingPage() {
               desc: 'Stateless requests by default, no caching, and data export controls.',
               icon: <Shield className="h-5 w-5" style={{ color: 'var(--primary)' }} />
             }].map((f) => (
-              <Card key={f.title} className="p-6 transition-transform duration-300 hover:-translate-y-1 hover:shadow-xl" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))', borderColor: 'var(--border)' }}>
+              <Card key={f.title} className="p-6 transition-transform duration-300 hover:-translate-y-1 hover:shadow-xl" style={{ background: 'var(--card)', borderColor: 'var(--border)' }}>
                 <div className="flex items-center gap-2">
                   {f.icon}
                   <h3 className="text-base font-semibold">{f.title}</h3>
@@ -197,7 +57,7 @@ export default function PricingPage() {
               a: 'Requests are processed statelessly with no-cache semantics. You can export or clear history anytime.'
             },{
               q: 'Which AI models are used?',
-              a: 'Free uses GPT-4o, GPT-4 Turbo, GPT-4, and GPT-3.5-turbo. Pro uses GPT-4o family. Enterprise uses Claude-3.5-Sonnet with GPT-4o fallback.'
+              a: 'Free plan includes FakeVerifier (Web Search) for fact-checking with live web search and Llama 4 Maverick for conversational AI. Pro and Enterprise plans add GPT-OSS-20B, providing access to all three models: FakeVerifier (Web Search), Llama 4 Maverick, and GPT-OSS-20B.'
             },{
               q: 'Can I cancel anytime?',
               a: 'Yes. Plans are month-to-month; you can cancel or change tiers at any time.'
@@ -222,7 +82,7 @@ export default function PricingPage() {
           <div className="mt-6 overflow-x-auto">
             <table className="w-full text-sm overflow-hidden rounded-2xl" style={{ border: '1px solid var(--border)' }}>
               <thead>
-                <tr className="text-left" style={{ background: 'linear-gradient(180deg, rgba(59,130,246,0.08), transparent)', color: 'var(--muted-foreground)' }}>
+                <tr className="text-left" style={{ background: 'var(--muted)', color: 'var(--muted-foreground)' }}>
                   <th className="py-3 pr-4">Feature</th>
                   <th className="py-3 pr-4">Free</th>
                   <th className="py-3 pr-4">Pro</th>
@@ -235,7 +95,7 @@ export default function PricingPage() {
                   { k: 'Daily verifications', free: '20', pro: '200', ent: 'Unlimited' },
                   { k: 'Images per verification', free: '1', pro: '3', ent: '10' },
                   { k: 'Live news integration', free: 'Basic', pro: 'Full', ent: 'Full + SLA' },
-                  { k: 'Model quality', free: 'GPT-4o family', pro: 'GPT-4o family', ent: 'Claude-3.5-Sonnet + GPT-4o' },
+                  { k: 'AI Models', free: 'FakeVerifier (Web Search) + Llama 4 Maverick', pro: 'FakeVerifier (Web Search) + Llama 4 Maverick + GPT-OSS-20B', ent: 'FakeVerifier (Web Search) + Llama 4 Maverick + GPT-OSS-20B' },
                   { k: 'Response time', free: 'Standard', pro: 'Fast', ent: 'Instant' },
                   { k: 'Support', free: 'Community', pro: 'Priority', ent: 'Dedicated + phone' },
                   { k: 'Analytics', free: 'Basic', pro: 'Advanced', ent: 'Advanced + team' },
@@ -254,7 +114,7 @@ export default function PricingPage() {
         </section>
 
         <div className="mt-12 text-center text-xs" style={{ color: "var(--muted-foreground)" }}>
-          Prices in USD. Taxes may apply.
+          Prices in GBP. Taxes may apply.
         </div>
       </div>
     </div>
