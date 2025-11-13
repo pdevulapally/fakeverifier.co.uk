@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import type { ReactNode, ElementType } from "react"
 
 import { motion, HTMLMotionProps } from "motion/react"
 
@@ -12,7 +13,9 @@ interface TimelineContentProps extends HTMLMotionProps<"div"> {
 
   customVariants?: any
 
-  as?: keyof JSX.IntrinsicElements
+  as?: ElementType
+
+  children?: ReactNode
 
 }
 
