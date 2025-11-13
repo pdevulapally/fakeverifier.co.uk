@@ -18,7 +18,7 @@ import {
 
 } from "react"
 
-import { DynamicAnimationOptions, motion } from "framer-motion"
+import { AnimationOptions, motion } from "framer-motion"
 
 import { cn } from "@/lib/utils"
 
@@ -28,7 +28,7 @@ interface TextProps {
 
   reverse?: boolean
 
-  transition?: DynamicAnimationOptions
+  transition?: AnimationOptions
 
   splitBy?: "words" | "characters" | "lines" | string
 
