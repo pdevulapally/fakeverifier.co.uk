@@ -30,7 +30,7 @@ export default function ShaderHero() {
     if (typeof window !== 'undefined' && window.location.pathname === '/verify') {
       // If already on verify page, dispatch a custom event to trigger onVerify
       const event = new CustomEvent('heroVerifySubmit', {
-        detail: { input: inputText, model: model || 'llama-4-maverick-or', imageFiles: imageFiles || [] }
+        detail: { input: inputText, model: model || 'llama-3.3-70b-or', imageFiles: imageFiles || [] }
       });
       window.dispatchEvent(event);
       return;
@@ -39,7 +39,7 @@ export default function ShaderHero() {
     // Store the input, model, and image files in sessionStorage to pass it to the verify page
     sessionStorage.setItem('pendingVerification', JSON.stringify({
       input: inputText,
-      model: model || 'llama-4-maverick-or',
+      model: model || 'llama-3.3-70b-or',
       imageFiles: imageFiles ? Array.from(imageFiles).map(file => file.name) : []
     }));
     

@@ -685,11 +685,11 @@ function VerifyPage() {
       // Building lightweight context from recent turns to help follow-ups
       const recent = messages.slice(-6).map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n');
 
-      // If user selected a chat model (llama, gpt-oss, maverick), route to unified /api/chat
-      const chatModelIds = ['llama', 'gpt-oss', 'maverick'];
+      // If user selected a chat model (llama, gpt-oss), route to unified /api/chat
+      const chatModelIds = ['llama', 'gpt-oss'];
       const isChatModel = chatModelIds.some(id => (model || '').toLowerCase().includes(id));
       if (isChatModel) {
-        const chatModel = model || 'llama-4-maverick-or';
+        const chatModel = model || 'llama-3.3-70b-or';
         // Tracking the model used for regenerate functionality
         setLastUsedModel(chatModel);
         
@@ -1851,20 +1851,34 @@ function VerifyPage() {
                       {/* Credit Balance block above Upgrade */}
                       <InlineCredits uid={user?.uid} />
                       <button 
-                        onClick={() => router.push('/pricing')}
-                        className="flex w-full items-center gap-3 px-3 py-2 text-sm text-purple-600 hover:bg-purple-50 rounded-md">
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setUserDropdownOpen(false);
+                          router.push('/pricing');
+                        }}
+                        className="flex w-full items-center gap-3 px-3 py-2 text-sm text-purple-600 hover:bg-purple-50 rounded-md transition-colors"
+                      >
                         <Crown className="h-4 w-4" />
                         <span>Upgrade Plan</span>
                       </button>
                       <button 
-                        onClick={() => router.push('/settings')}
-                        className="flex w-full items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-md">
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setUserDropdownOpen(false);
+                          router.push('/settings');
+                        }}
+                        className="flex w-full items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
+                      >
                         <Settings className="h-4 w-4" />
                         <span>Settings</span>
                       </button>
                       <button 
-                        onClick={logout}
-                        className="flex w-full items-center gap-3 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-md"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setUserDropdownOpen(false);
+                          logout();
+                        }}
+                        className="flex w-full items-center gap-3 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-md transition-colors"
                       >
                         <LogOut className="h-4 w-4" />
                         <span>Logout</span>

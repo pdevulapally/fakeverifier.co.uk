@@ -539,7 +539,7 @@ export default function HowItWorksPage() {
                 {
                   icon: <Shield className="h-6 w-6" />,
                   title: "Multiple AI Models",
-                  description: "Powered by FakeVerifier, Llama 4 Maverick, and GPT-OSS-20B for accurate results.",
+                  description: "Powered by FakeVerifier, Llama 3.3 70B, and GPT-OSS-20B for accurate results.",
                 },
                 {
                   icon: <FileText className="h-6 w-6" />,

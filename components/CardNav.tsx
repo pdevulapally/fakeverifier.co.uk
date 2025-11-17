@@ -166,7 +166,10 @@ export default function CardNav({
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Element;
-      if (userDropdownOpen && !target.closest('.user-dropdown')) {
+      // Check if click is outside both the button and the dropdown menu
+      if (userDropdownOpen && 
+          !target.closest('.user-dropdown') && 
+          !target.closest('.user-dropdown-menu')) {
         setUserDropdownOpen(false);
       }
     };
@@ -233,7 +236,8 @@ export default function CardNav({
                {/* Dropdown Menu */}
                {userDropdownOpen && createPortal(
                 <div 
-                  className="fixed w-64 bg-white border border-gray-200 rounded-lg shadow-lg"
+                  className="user-dropdown-menu fixed w-64 bg-white border border-gray-200 rounded-lg shadow-lg"
+                  onClick={(e) => e.stopPropagation()}
                   style={{ 
                     position: 'fixed',
                     top: `${buttonPosition.top}px`,
@@ -270,22 +274,45 @@ export default function CardNav({
                     {/* Menu Items */}
                     <div className="py-1">
                       <button 
-                        onClick={() => window.location.href = '/pricing'}
-                        className="flex w-full items-center gap-3 px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-md">
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setUserDropdownOpen(false);
+                          router.push('/pricing');
+                        }}
+                        className="flex w-full items-center gap-3 px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                      >
                         <Crown className="h-4 w-4" />
                         <span>Upgrade Plan</span>
                       </button>
-                      <button className="flex w-full items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-md">
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setUserDropdownOpen(false);
+                          router.push('/profile');
+                        }}
+                        className="flex w-full items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
+                      >
                         <User className="h-4 w-4" />
                         <span>Profile</span>
                       </button>
-                      <button className="flex w-full items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-md">
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setUserDropdownOpen(false);
+                          router.push('/settings');
+                        }}
+                        className="flex w-full items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
+                      >
                         <Settings className="h-4 w-4" />
                         <span>Settings</span>
                       </button>
                       <button 
-                        onClick={logout}
-                        className="flex w-full items-center gap-3 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-md"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setUserDropdownOpen(false);
+                          logout();
+                        }}
+                        className="flex w-full items-center gap-3 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-md transition-colors"
                       >
                         <LogOut className="h-4 w-4" />
                         <span>Logout</span>

@@ -319,8 +319,8 @@ export async function POST(req: NextRequest) {
     let plan = await getUserPlan((userId || '').toString());
     const isAnonymous = !userId || userId === 'demo' || userId === '';
     const modelId = (model || '').toString();
-    // Check if it's a Llama/chat model (includes all chat models: llama-hf, llama-4-maverick, gpt-oss-20b)
-    const isLlamaModel = modelId.includes('llama') || modelId.includes('gpt-oss') || modelId.includes('maverick');
+    // Check if it's a Llama/chat model (includes all chat models: llama, gpt-oss-20b)
+    const isLlamaModel = modelId.includes('llama') || modelId.includes('gpt-oss');
     
     // Track anonymous chat usage for chat models (OpenRouter models)
     let anonymousChatCount = 0;
@@ -350,8 +350,8 @@ export async function POST(req: NextRequest) {
       plan = 'pro';
     } else if (isLlamaModel && !isAnonymous) {
       // Logged-in users: honor Llama model selection regardless of plan
-      // Free plan users can use Llama 4 Maverick (OpenRouter models)
-      if (modelId.includes('maverick') || modelId.includes('gpt-oss')) {
+      // Free plan users can use Llama 3.3 70B (OpenRouter models)
+      if (modelId.includes('llama') || modelId.includes('gpt-oss')) {
         plan = 'pro'; // Allow OpenRouter models for all logged-in users
       } else {
         plan = 'pro'; // HF models require pro/enterprise

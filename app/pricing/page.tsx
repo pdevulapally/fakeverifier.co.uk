@@ -57,7 +57,7 @@ export default function PricingPage() {
               a: 'Requests are processed statelessly with no-cache semantics. You can export or clear history anytime.'
             },{
               q: 'Which AI models are used?',
-              a: 'Free plan includes FakeVerifier (Web Search) for fact-checking with live web search and Llama 4 Maverick for conversational AI. Pro and Enterprise plans add GPT-OSS-20B, providing access to all three models: FakeVerifier (Web Search), Llama 4 Maverick, and GPT-OSS-20B.'
+              a: 'Free plan includes FakeVerifier (Web Search) for fact-checking with live web search and Llama 3.3 70B for conversational AI. Pro and Enterprise plans add GPT-OSS-20B, providing access to all three models: FakeVerifier (Web Search), Llama 3.3 70B, and GPT-OSS-20B.'
             },{
               q: 'Can I cancel anytime?',
               a: 'Yes. Plans are month-to-month; you can cancel or change tiers at any time.'
@@ -95,7 +95,7 @@ export default function PricingPage() {
                   { k: 'Daily verifications', free: '20', pro: '200', ent: 'Unlimited' },
                   { k: 'Images per verification', free: '1', pro: '3', ent: '10' },
                   { k: 'Live news integration', free: 'Basic', pro: 'Full', ent: 'Full + SLA' },
-                  { k: 'AI Models', free: 'FakeVerifier (Web Search) + Llama 4 Maverick', pro: 'FakeVerifier (Web Search) + Llama 4 Maverick + GPT-OSS-20B', ent: 'FakeVerifier (Web Search) + Llama 4 Maverick + GPT-OSS-20B' },
+                  { k: 'AI Models', free: 'FakeVerifier (Web Search) + Llama 3.3 70B', pro: 'FakeVerifier (Web Search) + Llama 3.3 70B + GPT-OSS-20B', ent: 'FakeVerifier (Web Search) + Llama 3.3 70B + GPT-OSS-20B' },
                   { k: 'Response time', free: 'Standard', pro: 'Fast', ent: 'Instant' },
                   { k: 'Support', free: 'Community', pro: 'Priority', ent: 'Dedicated + phone' },
                   { k: 'Analytics', free: 'Basic', pro: 'Advanced', ent: 'Advanced + team' },

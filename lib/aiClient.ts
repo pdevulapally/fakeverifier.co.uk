@@ -78,7 +78,7 @@ export async function callOpenRouterChat(messages: any[], model: string): Promis
 export async function callLlamaChat(messages: any[], modelId?: string): Promise<string> {
   // Map model IDs to their actual OpenRouter API model names
   const modelMap: Record<string, string> = {
-    'llama-4-maverick-or': 'meta-llama/llama-4-maverick:free',
+    'llama-3.3-70b-or': 'meta-llama/llama-3.3-70b-instruct:free',
     'gpt-oss-20b-or': 'openai/gpt-oss-20b:free'
   };
 
@@ -88,10 +88,10 @@ export async function callLlamaChat(messages: any[], modelId?: string): Promise<
   // Find matching model (case-insensitive)
   const matchedKey = Object.keys(modelMap).find(key => key.toLowerCase() === normalizedModelId);
   
-  // Default to Llama 4 Maverick if no model specified or not found
+  // Default to Llama 3.3 70B if no model specified or not found
   const selectedModel = matchedKey && modelMap[matchedKey]
     ? modelMap[matchedKey]
-    : 'meta-llama/llama-4-maverick:free';
+    : 'meta-llama/llama-3.3-70b-instruct:free';
 
   // Use OpenRouter directly - no Hugging Face calls
   return callOpenRouterChat(messages, selectedModel);
