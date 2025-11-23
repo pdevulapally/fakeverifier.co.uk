@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense, useCallback } from 'react';
+import { useState, useEffect, Suspense, useCallback, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -38,6 +38,7 @@ import { TextShimmer } from '@/components/ui/text-shimmer';
 import { MemoryManager } from '@/components/MemoryManager';
 import { MemoryNotification } from '@/components/MemoryNotification';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAnimatedText } from '@/components/ui/animated-text';
 
 function TokenCounters({ uid }: { uid?: string | null }) {
   const [data, setData] = useState<{ daily: number; monthly: number; plan: string } | null>(null);
@@ -123,26 +124,88 @@ function InlineCredits({ uid }: { uid?: string | null }) {
   }, [uid]);
   if (!data) return null;
 
+  const planTotals: Record<string, { daily: number; monthly: number; color: string }> = {
+    free: { daily: 20, monthly: 100, color: '#9CA3AF' },
+    pro: { daily: 200, monthly: 2000, color: 'var(--primary)' },
+    enterprise: { daily: Number.MAX_SAFE_INTEGER, monthly: Number.MAX_SAFE_INTEGER, color: '#8B5CF6' },
+  };
+  const totals = planTotals[data.plan] || planTotals.free;
+  // Calculate remaining credits percentage (what's left, not what's used)
+  const dailyRemaining = Math.max(0, data.daily || 0);
+  const monthlyRemaining = Math.max(0, data.monthly || 0);
+  const dailyPct = totals.daily === Number.MAX_SAFE_INTEGER ? 100 : Math.min(100, Math.round((dailyRemaining / Math.max(1, totals.daily)) * 100));
+  const monthlyPct = totals.monthly === Number.MAX_SAFE_INTEGER ? 100 : Math.min(100, Math.round((monthlyRemaining / Math.max(1, totals.monthly)) * 100));
+
   return (
     <div className="mt-3 rounded-xl border bg-white p-4">
       <div className="mb-3">
         <p className="text-[13px] font-medium text-gray-700">Credit Balance</p>
       </div>
-      <div className="space-y-2">
-        <div className="flex items-center justify-between text-[13px]">
-          <span className="text-gray-600">Daily credits</span>
-          <span className="font-medium text-gray-900">{data.daily}</span>
+      <div className="space-y-4">
+        {/* Daily Credits Progress Bar */}
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[12px] text-gray-600">Daily credits</span>
+            <span className="text-[12px] font-medium text-gray-900">
+              {totals.daily === Number.MAX_SAFE_INTEGER ? 'Unlimited' : `${data.daily} / ${totals.daily}`}
+            </span>
+          </div>
+          {totals.daily !== Number.MAX_SAFE_INTEGER ? (
+            <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+              <div 
+                className="h-2 rounded-full transition-all duration-300 ease-out" 
+                style={{ 
+                  width: `${dailyPct}%`, 
+                  background: totals.color,
+                }} 
+              />
+            </div>
+          ) : (
+            <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+              <div className="h-2 rounded-full bg-gradient-to-r from-purple-500 to-purple-600" style={{ width: '100%' }} />
+            </div>
+          )}
         </div>
-        <div className="flex items-center justify-between text-[13px]">
-          <span className="text-gray-600">Monthly credits</span>
-          <span className="font-medium text-gray-900">{data.monthly}</span>
+
+        {/* Monthly Credits Progress Bar */}
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[12px] text-gray-600">Monthly credits</span>
+            <span className="text-[12px] font-medium text-gray-900">
+              {totals.monthly === Number.MAX_SAFE_INTEGER ? 'Unlimited' : `${data.monthly} / ${totals.monthly}`}
+            </span>
+          </div>
+          {totals.monthly !== Number.MAX_SAFE_INTEGER ? (
+            <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+              <div 
+                className="h-2 rounded-full transition-all duration-300 ease-out" 
+                style={{ 
+                  width: `${monthlyPct}%`, 
+                  background: totals.color,
+                }} 
+              />
+            </div>
+          ) : (
+            <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+              <div className="h-2 rounded-full bg-gradient-to-r from-purple-500 to-purple-600" style={{ width: '100%' }} />
+            </div>
+          )}
         </div>
       </div>
-      <div className="mt-3 rounded-lg bg-blue-50 p-3 text-[12px] text-blue-700">
-        Upgrade your plan to buy more credits. <a href="/pricing" className="underline">Upgrade plan</a>
-      </div>
+      {data.plan !== 'enterprise' && (data.daily <= 0 || data.monthly <= 0) && (
+        <div className="mt-3 rounded-lg bg-blue-50 p-3 text-[12px] text-blue-700">
+          Upgrade your plan to buy more credits. <a href="/pricing" className="underline font-medium">Upgrade plan</a>
+        </div>
+      )}
     </div>
   );
+}
+
+interface EvidenceItem {
+  title?: string;
+  link?: string;
+  snippet?: string;
+  image?: string; // Image URL for thumbnails
 }
 
 interface Message {
@@ -151,6 +214,7 @@ interface Message {
   content: string;
   timestamp: Date;
   model?: string; // Store the model used for this message
+  evidence?: EvidenceItem[]; // Store evidence for citations
 }
 
 interface Conversation {
@@ -160,6 +224,193 @@ interface Conversation {
   createdAt: Date;
   updatedAt: Date;
 }
+
+// Citation component for inline references (ChatGPT style)
+function Citation({ index, evidence, onCitationClick }: { index: number; evidence: EvidenceItem; onCitationClick?: (index: number) => void }) {
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (onCitationClick) {
+      onCitationClick(index);
+    } else if (evidence.link) {
+      window.open(evidence.link, '_blank', 'noopener,noreferrer');
+    }
+  };
+
+  return (
+    <sup className="inline-flex items-center">
+      <a
+        href={evidence.link || '#'}
+        onClick={handleClick}
+        className="ml-0.5 text-blue-600 hover:text-blue-800 hover:underline cursor-pointer font-medium"
+        title={evidence.title || evidence.link}
+      >
+        [{index + 1}]
+      </a>
+    </sup>
+  );
+}
+
+// Sources component - displays sources as badges
+function Sources({ evidence }: { evidence: EvidenceItem[] }) {
+  if (!evidence || evidence.length === 0) return null;
+
+  // Get domain name from URL
+  const getDomainName = (url?: string): string => {
+    if (!url) return 'Source';
+    try {
+      const urlObj = new URL(url);
+      let hostname = urlObj.hostname.replace(/^www\./, '');
+      return hostname;
+    } catch {
+      return 'Source';
+    }
+  };
+
+  // Get source name (prefer title, fallback to domain)
+  const getSourceName = (item: EvidenceItem): string => {
+    if (item.title) {
+      // Try to extract source from title (e.g., "Reuters - Article Title" -> "Reuters")
+      const match = item.title.match(/^([^-|•]+)/);
+      if (match) {
+        const source = match[1].trim();
+        if (source.length > 0 && source.length < 30) return source;
+      }
+    }
+    return getDomainName(item.link);
+  };
+
+  return (
+    <div className="mt-4 pt-4 border-t border-gray-200">
+      <h3 className="text-sm font-semibold text-gray-700 mb-3">Sources</h3>
+      <div className="flex flex-wrap gap-2">
+        {evidence.map((item, index) => {
+          const sourceName = getSourceName(item);
+          
+          return (
+            <a
+              key={index}
+              href={item.link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-all"
+            >
+              <Link2 className="h-3 w-3 text-gray-500" />
+              <span>{sourceName}</span>
+            </a>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Further Reading component with article cards
+function FurtherReading({ evidence }: { evidence: EvidenceItem[] }) {
+  if (!evidence || evidence.length === 0) return null;
+
+  // Get domain name from URL
+  const getDomainName = (url?: string): string => {
+    if (!url) return 'Source';
+    try {
+      const urlObj = new URL(url);
+      let hostname = urlObj.hostname.replace(/^www\./, '');
+      return hostname;
+    } catch {
+      return 'Source';
+    }
+  };
+
+  // Get source name (prefer title, fallback to domain)
+  const getSourceName = (item: EvidenceItem): string => {
+    if (item.title) {
+      // Try to extract source from title (e.g., "Reuters - Article Title" -> "Reuters")
+      const match = item.title.match(/^([^-|•]+)/);
+      if (match) {
+        const source = match[1].trim();
+        if (source.length > 0 && source.length < 30) return source;
+      }
+    }
+    return getDomainName(item.link);
+  };
+
+  // Calculate days ago (mock for now, could be enhanced with actual dates)
+  const getDaysAgo = (index: number): number => {
+    // Mock: return 13, 15, 17 for first 3 items, then random
+    const mockDays = [13, 15, 17];
+    return mockDays[index] || Math.floor(Math.random() * 30) + 1;
+  };
+
+  // Limit to 3 articles for the further reading section
+  const articlesToShow = evidence.slice(0, 3);
+
+  return (
+    <div className="mt-6 pt-6 border-t border-gray-200">
+      <h3 className="text-lg font-semibold text-gray-900 mb-4">Further reading</h3>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {articlesToShow.map((item, index) => {
+          const sourceName = getSourceName(item);
+          const daysAgo = getDaysAgo(index);
+          
+          return (
+            <a
+              key={index}
+              href={item.link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block rounded-lg border border-gray-200 bg-white hover:shadow-md transition-shadow overflow-hidden"
+            >
+              {/* Image thumbnail - use actual image URL if available */}
+              {item.image ? (
+                <div className="w-full h-32 overflow-hidden bg-gray-100 relative">
+                  <img 
+                    src={item.image} 
+                    alt={item.title || 'Article thumbnail'} 
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      // Hide image and show placeholder on error
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
+                      const parent = target.parentElement;
+                      if (parent && !parent.querySelector('.placeholder-fallback')) {
+                        const placeholder = document.createElement('div');
+                        placeholder.className = 'placeholder-fallback w-full h-32 bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center absolute inset-0';
+                        placeholder.innerHTML = '<svg class="h-8 w-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>';
+                        parent.appendChild(placeholder);
+                      }
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="w-full h-32 bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
+                  <Link2 className="h-8 w-8 text-gray-400" />
+                </div>
+              )}
+              <div className="p-4">
+                {/* Source name with logo placeholder */}
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-5 h-5 rounded-full bg-gray-300 flex items-center justify-center">
+                    <span className="text-xs font-semibold text-gray-600">
+                      {sourceName.charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                  <span className="text-xs font-medium text-gray-600">{sourceName}</span>
+                </div>
+                {/* Headline */}
+                <h4 className="text-sm font-semibold text-gray-900 mb-2 line-clamp-2">
+                  {item.title || item.snippet || 'Read more'}
+                </h4>
+                {/* Timestamp */}
+                <p className="text-xs text-gray-500">{daysAgo} days ago</p>
+              </div>
+            </a>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Using the new animated-text component from components/ui
 
 function VerifyPage() {
   const [loading, setLoading] = useState(false);
@@ -395,18 +646,68 @@ function VerifyPage() {
     setShowPrivacyModal(false);
   };
 
-  // Minimal markdown renderer for assistant messages (links, bold, lists, newlines)
-  function mdToHtml(md: string): string {
+  // Process citations in markdown - replace source links with citation placeholders
+  function processCitations(md: string, evidence: EvidenceItem[]): { processed: string; citationMap: Map<string, number> } {
+    if (!evidence || evidence.length === 0) {
+      return { processed: md, citationMap: new Map() };
+    }
+
+    const citationMap = new Map<string, number>();
+    let processed = md;
+
+    // Remove Sources section if it exists
+    processed = processed.replace(/\n\s*\*\*Sources:\*\*\s*\n[\s\S]*?(?=\n\n|\n$|$)/gi, '');
+    processed = processed.replace(/\n\s*Sources:\s*\n[\s\S]*?(?=\n\n|\n$|$)/gi, '');
+
+    // Map evidence URLs to citation indices
+    evidence.forEach((item, index) => {
+      if (item.link) {
+        citationMap.set(item.link.toLowerCase(), index);
+      }
+    });
+
+    // Replace markdown links that match evidence URLs with citation placeholders
+    // Pattern: [text](url) -> text[CITATION:index]
+    processed = processed.replace(/\[([^\]]+)\]\((https?[^\s)]+)\)/g, (match, text, url) => {
+      const normalizedUrl = url.toLowerCase();
+      const citationIndex = citationMap.get(normalizedUrl);
+      if (citationIndex !== undefined) {
+        return `${text}[CITATION:${citationIndex}]`;
+      }
+      return match; // Keep original if not in evidence
+    });
+
+    return { processed, citationMap };
+  }
+
+  // Minimal markdown renderer for assistant messages (links, bold, lists, newlines, citations)
+  function mdToHtml(md: string, evidence?: EvidenceItem[]): string {
     if (!md) return '';
-    let html = md;
+    
+    // Process citations first
+    const { processed, citationMap } = evidence ? processCitations(md, evidence) : { processed: md, citationMap: new Map() };
+    let html = processed;
+    
     // escape basic HTML
     html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     // bold **text**
     html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    // links [text](url)
-    html = html.replace(/\[(.+?)\]\((https?:[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="underline text-blue-600 hover:text-blue-800">$1</a>');
+    
+    // Process citation placeholders [CITATION:index] -> render as citation
+    html = html.replace(/\[CITATION:(\d+)\]/g, (match, indexStr) => {
+      const index = parseInt(indexStr, 10);
+      if (evidence && evidence[index]) {
+        const item = evidence[index];
+        return `<sup class="inline-flex items-center"><a href="${item.link || '#'}" target="_blank" rel="noopener noreferrer" class="ml-0.5 hover:underline cursor-pointer font-medium" style="color: var(--primary);" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'" title="${(item.title || item.link || '').replace(/"/g, '&quot;')}">[${index + 1}]</a></sup>`;
+      }
+      return match;
+    });
+    
+    // Regular links [text](url) - only if not already processed as citations
+    html = html.replace(/\[([^\]]+)\]\((https?:[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="underline" style="color: var(--primary);" onmouseover="this.style.opacity=\'0.8\'" onmouseout="this.style.opacity=\'1\'">$1</a>');
     // angle links <url>
-    html = html.replace(/&lt;(https?:[^\s]+)&gt;/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="underline text-blue-600 hover:text-blue-800">$1</a>');
+    html = html.replace(/&lt;(https?:[^\s]+)&gt;/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="underline" style="color: var(--primary);" onmouseover="this.style.opacity=\'0.8\'" onmouseout="this.style.opacity=\'1\'">$1</a>');
+    
     // numbered lists (1. 2. 3. etc.) and bullet lists (-)
     const lines = html.split(/\r?\n/);
     let inBulletList = false;
@@ -436,6 +737,44 @@ function VerifyPage() {
     html = out.join('\n').replace(/\n/g, '<br/>');
     return html;
   }
+
+  // Assistant Message Component with typing animation
+  const AssistantMessage = ({ 
+    message, 
+    isLastMessage, 
+    isStreaming 
+  }: { 
+    message: Message; 
+    isLastMessage: boolean; 
+    isStreaming: boolean;
+  }) => {
+    // Use the new animated-text component for smooth character-by-character typing
+    // Only animate the last message for better UX
+    const shouldAnimate = isLastMessage;
+    const animatedText = useAnimatedText(shouldAnimate ? message.content : '', '');
+    const contentToDisplay = shouldAnimate ? animatedText : message.content;
+
+    return (
+      <>
+        <div className="prose prose-sm sm:prose-base max-w-none text-gray-900 leading-relaxed">
+          <div 
+            className="prose prose-sm sm:prose-base max-w-none prose-headings:font-semibold prose-p:leading-relaxed prose-p:text-gray-800 prose-strong:text-gray-900 prose-strong:font-semibold prose-a:no-underline hover:prose-a:underline prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-sm" 
+            style={{
+              '--tw-prose-links': 'var(--primary)',
+              '--tw-prose-code': 'var(--primary)',
+            } as React.CSSProperties}
+            dangerouslySetInnerHTML={{ __html: mdToHtml(contentToDisplay, message.evidence) }} 
+          />
+        </div>
+        {message.evidence && message.evidence.length > 0 && (
+          <>
+            <Sources evidence={message.evidence} />
+            <FurtherReading evidence={message.evidence} />
+          </>
+        )}
+      </>
+    );
+  };
 
   // Load conversations when user is authenticated
   useEffect(() => {
@@ -741,7 +1080,8 @@ function VerifyPage() {
           role: 'assistant',
           content: String(chatJson.result || ''),
           timestamp: new Date(),
-          model: chatModel // Store the model used for this response
+          model: chatModel, // Store the model used for this response
+          evidence: chatJson.evidence || [] // Store evidence for citations
         };
         
         // Replace last assistant message if regenerating, otherwise add new one
@@ -1513,53 +1853,169 @@ function VerifyPage() {
         {/* Mobile Main Content */}
         <div className="flex flex-col h-[calc(100vh-60px)] overflow-hidden">
           {/* Messages */}
-          <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+          <div className="flex-1 space-y-6 overflow-y-auto px-4 py-6">
             {messages.length === 0 ? (
               <div className="grid h-full place-items-center">
-                <div className="text-center max-w-full">
-                  <h2 className="mb-2 text-xl font-bold text-gray-900">Start a verification</h2>
-                  <p className="text-sm text-gray-600">Paste a URL or text to verify its authenticity</p>
+                <div className="text-center max-w-full px-4">
+                  {user ? (
+                    <>
+                      {/* Personalized Welcome for Logged-in Users */}
+                      <div className="mb-6 flex justify-center">
+                        {user.avatar ? (
+                          <img 
+                            src={user.avatar} 
+                            alt={user?.name || 'User'} 
+                            className="h-16 w-16 rounded-full object-cover ring-4 ring-gray-100 shadow-lg"
+                          />
+                        ) : (
+                          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-purple-600 ring-4 ring-gray-100 shadow-lg">
+                            <span className="text-2xl font-bold text-white">
+                              {(user?.name?.charAt(0) || user?.email?.charAt(0) || 'U').toUpperCase()}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <h2 className="mb-2 text-2xl font-bold text-gray-900">
+                        Welcome back, {user?.name?.split(' ')[0] || user?.email?.split('@')[0] || 'there'}! 👋
+                      </h2>
+                      <p className="mb-4 text-base text-gray-700">
+                        Ready to verify something? Paste a URL or text below and I'll help you check its authenticity.
+                      </p>
+                      <div className="mx-auto mt-6 max-w-md rounded-xl border border-gray-200 bg-gradient-to-br from-gray-50 to-white p-4 shadow-sm">
+                        <p className="text-sm font-medium text-gray-700 mb-2">💡 Quick tip:</p>
+                        <p className="text-xs text-gray-600">
+                          You can verify news articles, social media posts, websites, or any text content. Just paste it in the input below!
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {/* Default for Anonymous Users */}
+                      <h2 className="mb-2 text-xl font-bold text-gray-900">Start a verification</h2>
+                      <p className="text-sm text-gray-600">Paste a URL or text to verify its authenticity</p>
+                    </>
+                  )}
                 </div>
               </div>
             ) : (
-              messages.map((m) => (
-                <div key={m.id} className="flex w-full justify-center">
-                  <div className="w-full max-w-3xl">
+              messages.map((m, index) => (
+                <div key={m.id} className="flex w-full justify-center px-4">
+                  <div className="w-full max-w-4xl">
                     {m.role === 'assistant' ? (
-                      <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                        <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-800">
-                          <img src="/Images/Fakeverifier-official-logo.png" alt="FakeVerifier Official Logo" className="h-5 w-auto" />
-                          <CheckCircle2 className="h-4 w-4 text-purple-600" />
-                        </div>
-                        <div className="prose prose-sm max-w-none text-gray-900">
-                          <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: mdToHtml(m.content) }} />
-                        </div>
-                        <div className="mt-3 flex items-center gap-1">
-                          <button onClick={() => onFeedback(m.id, 'up')} className="rounded-lg p-2 hover:bg-gray-100"><ThumbsUp className="h-4 w-4 text-gray-500" /></button>
-                          <button onClick={() => onFeedback(m.id, 'down')} className="rounded-lg p-2 hover:bg-gray-100"><ThumbsDown className="h-4 w-4 text-gray-500" /></button>
-                          <button onClick={() => onCopy(m.content)} className="rounded-lg p-2 hover:bg-gray-100"><Copy className="h-4 w-4 text-gray-500" /></button>
-                          {user && <button onClick={() => onShare(m.content)} className="rounded-lg p-2 hover:bg-gray-100"><Share className="h-4 w-4 text-gray-500" /></button>}
-                          <button onClick={onRegenerate} className="rounded-lg p-2 hover:bg-gray-100"><RotateCcw className="h-4 w-4 text-gray-500" /></button>
-                          <div className="ml-auto" />
-                        </div>
+                      <div className="group relative">
+                        <div className="rounded-2xl bg-white border border-gray-200 p-5 sm:p-6 shadow-sm hover:shadow-md transition-all duration-200">
+                          {/* Premium header with avatar */}
+                          <div className="mb-4 flex items-center gap-3">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 shadow-sm">
+                              <img src="/Images/Fakeverifier-official-logo.png" alt="FakeVerifier" className="h-5 w-5 object-contain" />
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold text-gray-900">FakeVerifier</span>
+                              <CheckCircle2 className="h-4 w-4" style={{ color: 'var(--primary)' }} />
+                            </div>
+                          </div>
+                          
+                          {/* Message content */}
+                          <div className="mb-4">
+                            <AssistantMessage 
+                              message={m} 
+                              isLastMessage={index === messages.length - 1} 
+                              isStreaming={loading}
+                            />
+                          </div>
+                          
+                          {/* Premium action buttons */}
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                            <button 
+                              onClick={() => onFeedback(m.id, 'up')} 
+                              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+                            >
+                              <ThumbsUp className="h-3.5 w-3.5" />
+                              <span>Helpful</span>
+                            </button>
+                            <button 
+                              onClick={() => onFeedback(m.id, 'down')} 
+                              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+                            >
+                              <ThumbsDown className="h-3.5 w-3.5" />
+                              <span>Not helpful</span>
+                            </button>
+                            <div className="mx-1 h-4 w-px bg-gray-300" />
+                            <button 
+                              onClick={() => onCopy(m.content)} 
+                              className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+                              title="Copy"
+                            >
+                              <Copy className="h-4 w-4" />
+                            </button>
+                            {user && (
+                              <button 
+                                onClick={() => onShare(m.content)} 
+                                className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+                                title="Share"
+                              >
+                                <Share className="h-4 w-4" />
+                              </button>
+                            )}
+                            <button 
+                              onClick={onRegenerate} 
+                              className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+                              title="Regenerate"
+                            >
+                              <RotateCcw className="h-4 w-4" />
+                            </button>
+                          </div>
 
-                        {/* Feedback tray on mobile */}
-                        {feedbackForMessageId === m.id && (
-                          <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
-                            <div className="mb-2 text-sm font-medium text-gray-700">Tell us more:</div>
-                            <div className="flex flex-wrap gap-2">
-                              {(dynamicReasons.length ? dynamicReasons : ['Not clear enough','Missing context','Not factual','Too verbose']).map((label) => (
+                          {/* Premium Feedback tray on mobile */}
+                          {feedbackForMessageId === m.id && (
+                            <div className="mt-4 rounded-xl border border-gray-200 bg-gradient-to-br from-gray-50 to-white p-4 shadow-sm">
+                              <div className="mb-3 text-sm font-semibold text-gray-900">Tell us more:</div>
+                              <div className="flex flex-wrap gap-2 mb-4">
+                                {(dynamicReasons.length ? dynamicReasons : ['Not clear enough','Missing context','Not factual','Too verbose']).map((label) => (
+                                  <button
+                                    key={label}
+                                    disabled={feedbackSubmitting}
+                                    onClick={async () => {
+                                      if (!user || !currentConversationId) return;
+                                      try {
+                                        setFeedbackSubmitting(true);
+                                        await fetch('/api/feedback', {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({ uid: user.uid, conversationId: currentConversationId, messageId: m.id, type: 'down', reason: label })
+                                        });
+                                      } catch (e) {
+                                        // Silent fail for feedback
+                                      } finally {
+                                        setFeedbackSubmitting(false);
+                                        setFeedbackForMessageId(null);
+                                      }
+                                    }}
+                                    className="rounded-full border border-gray-300 bg-white px-4 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                                  >
+                                    {label}
+                                  </button>
+                                ))}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <input 
+                                  id={`note-${m.id}`} 
+                                  className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all" 
+                                  placeholder="Optional note (max 120 chars)" 
+                                  maxLength={120} 
+                                />
                                 <button
-                                  key={label}
                                   disabled={feedbackSubmitting}
                                   onClick={async () => {
+                                    const inputEl = document.getElementById(`note-${m.id}`) as HTMLInputElement | null;
+                                    const note = inputEl?.value || '';
                                     if (!user || !currentConversationId) return;
                                     try {
                                       setFeedbackSubmitting(true);
                                       await fetch('/api/feedback', {
                                         method: 'POST',
                                         headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ uid: user.uid, conversationId: currentConversationId, messageId: m.id, type: 'down', reason: label })
+                                        body: JSON.stringify({ uid: user.uid, conversationId: currentConversationId, messageId: m.id, type: 'down', reason: 'More...', note })
                                       });
                                     } catch (e) {
                                       // Silent fail for feedback
@@ -1568,53 +2024,34 @@ function VerifyPage() {
                                       setFeedbackForMessageId(null);
                                     }
                                   }}
-                                  className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-100 disabled:opacity-60"
+                                  className="rounded-lg px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:shadow-md transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                                  style={{ background: 'var(--primary)', color: 'var(--primary-foreground)' }}
                                 >
-                                  {label}
+                                  Send
                                 </button>
-                              ))}
+                                <button
+                                  disabled={feedbackSubmitting}
+                                  onClick={() => setFeedbackForMessageId(null)}
+                                  className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
                             </div>
-                            <div className="mt-3 flex items-center gap-2">
-                              <input id={`note-${m.id}`} className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Optional note (max 120 chars)" maxLength={120} />
-                              <button
-                                disabled={feedbackSubmitting}
-                                onClick={async () => {
-                                  const inputEl = document.getElementById(`note-${m.id}`) as HTMLInputElement | null;
-                                  const note = inputEl?.value || '';
-                                  if (!user || !currentConversationId) return;
-                                  try {
-                                    setFeedbackSubmitting(true);
-                                    await fetch('/api/feedback', {
-                                      method: 'POST',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({ uid: user.uid, conversationId: currentConversationId, messageId: m.id, type: 'down', reason: 'More...', note })
-                                    });
-                                  } catch (e) {
-                                    // Silent fail for feedback
-                                  } finally {
-                                    setFeedbackSubmitting(false);
-                                    setFeedbackForMessageId(null);
-                                  }
-                                }}
-                                className="rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-60"
-                                style={{ background: 'var(--primary)', color: 'var(--primary-foreground)' }}
-                              >
-                                Send
-                              </button>
-                              <button
-                                disabled={feedbackSubmitting}
-                                onClick={() => setFeedbackForMessageId(null)}
-                                className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
                     ) : (
-                      <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                        <div className="text-sm text-gray-800 whitespace-pre-wrap">{m.content}</div>
+                      <div className="group relative">
+                        <div className="rounded-2xl bg-gray-100 border border-gray-200 p-5 sm:p-6 shadow-sm hover:shadow-md transition-all duration-200">
+                          <div className="mb-3 flex items-center gap-3">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-300 shadow-sm">
+                              <span className="text-sm font-semibold text-gray-700">U</span>
+                            </div>
+                            <span className="text-sm font-semibold text-gray-900">You</span>
+                          </div>
+                          <div className="text-sm leading-relaxed text-gray-800 whitespace-pre-wrap">{m.content}</div>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1622,21 +2059,26 @@ function VerifyPage() {
               ))
             )}
 
-            {/* Loading state */}
+            {/* Premium Loading state */}
             {loading && (
-              <div className="flex w-full justify-center">
-                <div className="w-full max-w-3xl">
-                  <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                    <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-800">
-                      <img src="/Images/Fakeverifier-official-logo.png" alt="FakeVerifier Official Logo" className="h-5 w-auto" />
-                      <CheckCircle2 className="h-4 w-4 text-purple-600" />
+              <div className="flex w-full justify-center px-4">
+                <div className="w-full max-w-4xl">
+                  <div className="rounded-2xl bg-gradient-to-br from-white to-gray-50/50 border border-gray-200/80 p-5 sm:p-6 shadow-sm backdrop-blur-sm">
+                  <div className="mb-4 flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 shadow-sm animate-pulse">
+                      <img src="/Images/Fakeverifier-official-logo.png" alt="FakeVerifier" className="h-5 w-5 object-contain" />
                     </div>
-                    <div className="flex items-center gap-2 text-gray-600">
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                      <TextShimmer className='font-mono text-sm [--base-color:theme(colors.blue.600)] [--base-gradient-color:theme(colors.blue.300)]'>
-                        Analyzing your input...
-                      </TextShimmer>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-gray-900">FakeVerifier</span>
+                      <CheckCircle2 className="h-4 w-4" style={{ color: 'var(--primary)' }} />
                     </div>
+                  </div>
+                  <div className="flex items-center gap-3 text-gray-600">
+                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-gray-200" style={{ borderTopColor: 'var(--primary)' }}></div>
+                    <TextShimmer className='font-mono text-sm [--base-color:var(--primary)]'>
+                      Analyzing your input...
+                    </TextShimmer>
+                  </div>
                   </div>
                 </div>
               </div>
@@ -1986,57 +2428,185 @@ function VerifyPage() {
       </div>
       
             {/* Messages */}
-            <div className="flex-1 space-y-4 sm:space-y-6 overflow-y-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6">
+            <div className="flex-1 space-y-6 sm:space-y-8 overflow-y-auto px-3 sm:px-4 md:px-6 py-6 sm:py-8">
           {messages.length === 0 ? (
                 <div className="grid h-full place-items-center">
-              <div className="text-center px-4">
-                    <h2 className="mb-2 text-xl sm:text-2xl font-bold text-gray-900">Start a verification</h2>
-                    <p className="text-sm sm:text-base text-gray-600">Paste a URL or text to verify its authenticity</p>
+              <div className="text-center px-4 max-w-2xl">
+                    {user ? (
+                      <>
+                        {/* Personalized Welcome for Logged-in Users */}
+                        <div className="mb-8 flex justify-center">
+                          {user.avatar ? (
+                            <img 
+                              src={user.avatar} 
+                              alt={user?.name || 'User'} 
+                              className="h-20 w-20 rounded-full object-cover ring-4 ring-gray-100 shadow-lg transition-transform hover:scale-105"
+                            />
+                          ) : (
+                            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-purple-600 ring-4 ring-gray-100 shadow-lg transition-transform hover:scale-105">
+                              <span className="text-3xl font-bold text-white">
+                                {(user?.name?.charAt(0) || user?.email?.charAt(0) || 'U').toUpperCase()}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        <h2 className="mb-3 text-3xl sm:text-4xl font-bold text-gray-900">
+                          Welcome back, {user?.name?.split(' ')[0] || user?.email?.split('@')[0] || 'there'}! 👋
+                        </h2>
+                        <p className="mb-6 text-lg sm:text-xl text-gray-700 max-w-xl mx-auto">
+                          Ready to verify something? Paste a URL or text below and I'll help you check its authenticity with real-time fact-checking.
+                        </p>
+                        <div className="mx-auto mt-8 max-w-lg rounded-2xl border border-gray-200 bg-gradient-to-br from-gray-50 via-white to-gray-50 p-6 shadow-md">
+                          <div className="flex items-start gap-4">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100">
+                              <span className="text-xl">💡</span>
+                            </div>
+                            <div className="text-left">
+                              <p className="text-sm font-semibold text-gray-900 mb-2">Quick tip for you:</p>
+                              <p className="text-sm text-gray-600 leading-relaxed">
+                                You can verify news articles, social media posts, websites, or any text content. Just paste it in the input below and I'll analyze it with multiple sources!
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        {userPlan && userPlan !== 'free' && (
+                          <div className="mt-6 mx-auto max-w-lg">
+                            <div className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 px-4 py-2">
+                              <span className="text-sm font-medium text-blue-700">
+                                ✨ {userPlan.charAt(0).toUpperCase() + userPlan.slice(1)} Plan Active
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        {/* Default for Anonymous Users */}
+                        <h2 className="mb-2 text-xl sm:text-2xl font-bold text-gray-900">Start a verification</h2>
+                        <p className="text-sm sm:text-base text-gray-600">Paste a URL or text to verify its authenticity</p>
+                      </>
+                    )}
               </div>
             </div>
           ) : (
-                messages.map((m) => (
-                  <div key={m.id} className="flex w-full justify-center">
-                    <div className="w-full max-w-3xl">
+                messages.map((m, index) => (
+                  <div key={m.id} className="flex w-full justify-center px-4 sm:px-6">
+                    <div className="w-full max-w-4xl">
                       {m.role === 'assistant' ? (
-                        <div className="rounded-xl sm:rounded-2xl border border-gray-200 bg-white p-3 sm:p-4 md:p-5 shadow-sm">
-                          <div className="mb-2 sm:mb-3 flex items-center gap-2 text-xs sm:text-sm font-semibold text-gray-800">
-                            <img src="/Images/Fakeverifier-official-logo.png" alt="FakeVerifier Official Logo" className="h-5 w-auto sm:h-6" />
-                            <CheckCircle2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-purple-600" />
+                        <div className="group relative">
+                          <div className="rounded-2xl bg-white border border-gray-200 p-5 sm:p-6 lg:p-7 shadow-sm hover:shadow-md transition-all duration-200">
+                            {/* Premium header with avatar */}
+                            <div className="mb-4 flex items-center gap-3">
+                              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 shadow-sm">
+                              <img src="/Images/Fakeverifier-official-logo.png" alt="FakeVerifier" className="h-5 w-5 object-contain" />
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold text-gray-900">FakeVerifier</span>
+                              <CheckCircle2 className="h-4 w-4" style={{ color: 'var(--primary)' }} />
+                            </div>
                           </div>
-                          <div className="prose prose-sm max-w-none text-gray-900 break-words overflow-wrap-anywhere">
-                            <div className="prose prose-sm max-w-none break-words" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }} dangerouslySetInnerHTML={{ __html: mdToHtml(m.content) }} />
-                    </div>
-                          {/* actions row */}
-                          <div className="mt-3 sm:mt-4 flex flex-wrap items-center gap-1 sm:gap-2">
-                            <button onClick={() => onFeedback(m.id, 'up')} className="rounded-lg p-1.5 sm:p-2 hover:bg-gray-100 active:bg-gray-200 touch-manipulation"><ThumbsUp className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" /></button>
-                            <button onClick={() => onFeedback(m.id, 'down')} className="rounded-lg p-1.5 sm:p-2 hover:bg-gray-100 active:bg-gray-200 touch-manipulation"><ThumbsDown className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" /></button>
-                            <button onClick={() => onCopy(m.content)} className="rounded-lg p-1.5 sm:p-2 hover:bg-gray-100 active:bg-gray-200 touch-manipulation"><Copy className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" /></button>
-                            {user && <button onClick={() => onShare(m.content)} className="rounded-lg p-1.5 sm:p-2 hover:bg-gray-100 active:bg-gray-200 touch-manipulation"><Share className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" /></button>}
-                            <button onClick={onRegenerate} className="rounded-lg p-1.5 sm:p-2 hover:bg-gray-100 active:bg-gray-200 touch-manipulation"><RotateCcw className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" /></button>
-                            <div className="ml-auto" />
-                            <button className="inline-flex items-center gap-2 rounded-lg sm:rounded-xl border border-gray-200 bg-white px-2.5 py-1.5 sm:px-3 sm:py-2 text-xs sm:text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 active:bg-gray-100 touch-manipulation">
-                              Regenerate
-                          </button>
-                        </div>
+                            
+                            {/* Message content */}
+                            <div className="mb-4">
+                              <AssistantMessage 
+                                message={m} 
+                                isLastMessage={index === messages.length - 1} 
+                                isStreaming={loading}
+                              />
+                            </div>
+                            
+                            {/* Premium action buttons */}
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                              <button 
+                                onClick={() => onFeedback(m.id, 'up')} 
+                                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+                              >
+                                <ThumbsUp className="h-3.5 w-3.5" />
+                                <span>Helpful</span>
+                              </button>
+                              <button 
+                                onClick={() => onFeedback(m.id, 'down')} 
+                                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+                              >
+                                <ThumbsDown className="h-3.5 w-3.5" />
+                                <span>Not helpful</span>
+                              </button>
+                              <div className="mx-1 h-4 w-px bg-gray-300" />
+                              <button 
+                                onClick={() => onCopy(m.content)} 
+                                className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+                                title="Copy"
+                              >
+                                <Copy className="h-4 w-4" />
+                              </button>
+                              {user && (
+                                <button 
+                                  onClick={() => onShare(m.content)} 
+                                  className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+                                  title="Share"
+                                >
+                                  <Share className="h-4 w-4" />
+                                </button>
+                              )}
+                              <button 
+                                onClick={onRegenerate} 
+                                className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+                                title="Regenerate"
+                              >
+                                <RotateCcw className="h-4 w-4" />
+                              </button>
+                            </div>
 
-                          {/* Feedback tray when thumbs down */}
-                          {feedbackForMessageId === m.id && (
-                            <div className="mt-3 sm:mt-4 rounded-lg sm:rounded-xl border border-gray-200 bg-gray-50 p-3">
-                              <div className="mb-2 text-xs sm:text-sm font-medium text-gray-700">Tell us more:</div>
-                              <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                                {(dynamicReasons.length ? dynamicReasons : ['Not clear enough','Missing context','Not factual','Too verbose']).map((label) => (
+                            {/* Premium Feedback tray when thumbs down */}
+                            {feedbackForMessageId === m.id && (
+                              <div className="mt-4 rounded-xl border border-gray-200 bg-gradient-to-br from-gray-50 to-white p-4 shadow-sm">
+                                <div className="mb-3 text-sm font-semibold text-gray-900">Tell us more:</div>
+                                <div className="flex flex-wrap gap-2 mb-4">
+                                  {(dynamicReasons.length ? dynamicReasons : ['Not clear enough','Missing context','Not factual','Too verbose']).map((label) => (
+                                    <button
+                                      key={label}
+                                      disabled={feedbackSubmitting}
+                                      onClick={async () => {
+                                        if (!user || !currentConversationId) return;
+                                        try {
+                                          setFeedbackSubmitting(true);
+                                          await fetch('/api/feedback', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ uid: user.uid, conversationId: currentConversationId, messageId: m.id, type: 'down', reason: label })
+                                          });
+                                        } catch (e) {
+                                          // Silent fail for feedback
+                                        } finally {
+                                          setFeedbackSubmitting(false);
+                                          setFeedbackForMessageId(null);
+                                        }
+                                      }}
+                                      className="rounded-full border border-gray-300 bg-white px-4 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                                    >
+                                      {label}
+                                    </button>
+                                  ))}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <input 
+                                    id={`note-${m.id}`} 
+                                    className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all" 
+                                    placeholder="Optional note (max 120 chars)" 
+                                    maxLength={120} 
+                                  />
                                   <button
-                                    key={label}
                                     disabled={feedbackSubmitting}
                                     onClick={async () => {
+                                      const inputEl = document.getElementById(`note-${m.id}`) as HTMLInputElement | null;
+                                      const note = inputEl?.value || '';
                                       if (!user || !currentConversationId) return;
                                       try {
                                         setFeedbackSubmitting(true);
                                         await fetch('/api/feedback', {
                                           method: 'POST',
                                           headers: { 'Content-Type': 'application/json' },
-                                          body: JSON.stringify({ uid: user.uid, conversationId: currentConversationId, messageId: m.id, type: 'down', reason: label })
+                                          body: JSON.stringify({ uid: user.uid, conversationId: currentConversationId, messageId: m.id, type: 'down', reason: 'More...', note })
                                         });
                                       } catch (e) {
                                         // Silent fail for feedback
@@ -2045,74 +2615,54 @@ function VerifyPage() {
                                         setFeedbackForMessageId(null);
                                       }
                                     }}
-                                    className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-100 disabled:opacity-60"
+                                    className="rounded-lg px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:shadow-md transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                                    style={{ background: 'var(--primary)', color: 'var(--primary-foreground)' }}
                                   >
-                                    {label}
+                                    Send
                                   </button>
-                                ))}
+                                  <button
+                                    disabled={feedbackSubmitting}
+                                    onClick={() => setFeedbackForMessageId(null)}
+                                    className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
                               </div>
-                              <div className="mt-3 flex items-center gap-2">
-                                <input id={`note-${m.id}`} className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Optional note (max 120 chars)" maxLength={120} />
-                                <button
-                                  disabled={feedbackSubmitting}
-                                  onClick={async () => {
-                                    const inputEl = document.getElementById(`note-${m.id}`) as HTMLInputElement | null;
-                                    const note = inputEl?.value || '';
-                                    if (!user || !currentConversationId) return;
-                                    try {
-                                      setFeedbackSubmitting(true);
-                                      await fetch('/api/feedback', {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ uid: user.uid, conversationId: currentConversationId, messageId: m.id, type: 'down', reason: 'More...', note })
-                                      });
-                                    } catch (e) {
-                                      // Silent fail for feedback
-                                    } finally {
-                                      setFeedbackSubmitting(false);
-                                      setFeedbackForMessageId(null);
-                                    }
-                                  }}
-                                  className="rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-60"
-                                  style={{ background: 'var(--primary)', color: 'var(--primary-foreground)' }}
-                                >
-                                  Send
-                                </button>
-                                <button
-                                  disabled={feedbackSubmitting}
-                                  onClick={() => setFeedbackForMessageId(null)}
-                                  className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100"
-                                >
-                                  Cancel
-                                </button>
+                            )}
+                        </div>
+                      </div>
+                    ) : (
+                      // Premium User message
+                      <div className="group relative">
+                        <div className="rounded-2xl bg-gray-100 border border-gray-200 p-5 sm:p-6 lg:p-7 shadow-sm hover:shadow-md transition-all duration-200">
+                            <div className="mb-3 flex items-center gap-3">
+                              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-300 shadow-sm">
+                                <span className="text-sm font-semibold text-gray-700">U</span>
                               </div>
+                              <span className="text-sm font-semibold text-gray-900">You</span>
                             </div>
-                          )}
-                    </div>
-                       ) : (
-                        // User message
-                        <div className="group relative">
-                          <div className="rounded-2xl bg-gray-100 p-4 shadow-sm">
                             {editingMessageId === m.id ? (
                               // Edit mode
                               <div className="space-y-3">
                                 <textarea
                                   value={editingContent}
                                   onChange={(e) => setEditingContent(e.target.value)}
-                                  className="w-full rounded-lg border border-gray-300 p-3 text-sm focus:border-blue-500 focus:outline-none"
+                                  className="w-full rounded-lg border border-gray-300 bg-white p-3 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all"
                                   rows={3}
                                   placeholder="Edit your message..."
                                 />
                                 <div className="flex items-center gap-2">
                                   <button
                                     onClick={saveEdit}
-                                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                                    className="rounded-lg px-4 py-2 text-sm font-medium text-white shadow-sm hover:shadow-md transition-all"
+                                    style={{ background: 'var(--primary)', color: 'var(--primary-foreground)' }}
                                   >
                                     Save & Regenerate
                                   </button>
                                   <button
                                     onClick={cancelMessageEditing}
-                                    className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                                    className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
                                   >
                                     Cancel
                                   </button>
@@ -2121,20 +2671,20 @@ function VerifyPage() {
                             ) : (
                               // Display mode
                               <div className="relative">
-                                <div className="text-sm text-gray-900">{m.content}</div>
+                                <div className="text-sm leading-relaxed text-gray-800 whitespace-pre-wrap">{m.content}</div>
                                 {/* Hover actions */}
-                                <div className="absolute -bottom-2 -right-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                                <div className="absolute -bottom-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                   <div className="flex items-center gap-1 rounded-lg bg-white border border-gray-200 p-1 shadow-lg">
                                     <button
                                       onClick={() => startEditing(m.id, m.content)}
-                                      className="rounded p-1.5 hover:bg-gray-100"
+                                      className="rounded p-1.5 hover:bg-gray-100 transition-colors"
                                       title="Edit message"
                                     >
                                       <Edit className="h-3.5 w-3.5 text-gray-600" />
                                     </button>
                                     <button
                                       onClick={() => onCopy(m.content)}
-                                      className="rounded p-1.5 hover:bg-gray-100"
+                                      className="rounded p-1.5 hover:bg-gray-100 transition-colors"
                                       title="Copy message"
                                     >
                                       <Copy className="h-3.5 w-3.5 text-gray-600" />
@@ -2145,12 +2695,12 @@ function VerifyPage() {
                             )}
                           </div>
                         </div>
-                       )}
+                    )}
                   </div>
                 </div>
-                ))
-          )}
-
+              ))
+            )}
+          
           {/* Live analysis timeline */}
           {timeline.length > 0 && (
             <div className="flex w-full justify-center">
@@ -2160,46 +2710,51 @@ function VerifyPage() {
             </div>
           )}
           
-          {/* Loading state for AI response */}
+          {/* Premium Loading state for AI response */}
           {loading && (
-            <div className="flex w-full justify-center">
-              <div className="w-full max-w-3xl">
-                <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                  <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-800">
-                    <img src="/Images/Fakeverifier-official-logo.png" alt="FakeVerifier Official Logo" className="h-6 w-auto" />
-                    <CheckCircle2 className="h-4 w-4 text-purple-600" />
-                  </div>
-                  <div className="flex items-center gap-2 text-gray-600">
-                    <TextShimmer className='font-mono text-sm [--base-color:theme(colors.blue.600)] [--base-gradient-color:theme(colors.blue.300)]'>
-                      Analyzing your input...
-                    </TextShimmer>
+            <div className="flex w-full justify-center px-4 sm:px-6">
+              <div className="w-full max-w-4xl">
+                <div className="rounded-2xl bg-white border border-gray-200 p-5 sm:p-6 lg:p-7 shadow-sm">
+                  <div className="mb-4 flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 shadow-sm animate-pulse">
+                      <img src="/Images/Fakeverifier-official-logo.png" alt="FakeVerifier" className="h-5 w-5 object-contain" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-gray-900">FakeVerifier</span>
+                      <CheckCircle2 className="h-4 w-4" style={{ color: 'var(--primary)' }} />
                     </div>
                   </div>
+                  <div className="flex items-center gap-3 text-gray-600">
+                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-gray-200" style={{ borderTopColor: 'var(--primary)' }}></div>
+                    <TextShimmer className='font-mono text-sm [--base-color:var(--primary)]'>
+                      Analyzing your input...
+                    </TextShimmer>
+                  </div>
                 </div>
+              </div>
             </div>
           )}
         </div>
         
-            {/* Composer */}
-            <div className="px-6 py-5">
+        {/* Composer */}
+        <div className="px-6 py-5">
           {error && (
-                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">{error}</div>
-              )}
-              
-
-              <div className="flex justify-center">
-                <div className="w-full max-w-3xl border-t border-gray-200 pt-5">
-                  <AI_Prompt 
-                    onSend={onVerify}
-                    placeholder="What's in your mind?..."
-                    className="w-full"
-                  />
+            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">{error}</div>
+          )}
+          
+          <div className="flex justify-center">
+            <div className="w-full max-w-3xl border-t border-gray-200 pt-5">
+              <AI_Prompt 
+                onSend={onVerify}
+                placeholder="What's in your mind?..."
+                className="w-full"
+              />
+            </div>
           </div>
         </div>
+      </main>
       </div>
-          </main>
-        </div>
-      </div>
+    </div>
 
       {/* Share Modal */}
       {shareModalOpen && (
@@ -2322,7 +2877,7 @@ function VerifyPage() {
               <div className="mb-4">
                 <input 
                   type="text" 
-                  value={publicLink}
+                  value={publicLink || ''}
                   readOnly
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-gray-50"
                 />
@@ -2627,7 +3182,7 @@ function VerifyPage() {
                 <div className="flex gap-2">
                   <input 
                     type="text" 
-                    value={publicLink}
+                    value={publicLink || ''}
                     readOnly
                     className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm bg-gray-50"
                   />

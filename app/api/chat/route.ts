@@ -28,7 +28,7 @@ async function getUserPreferenceHint(uid: string): Promise<string> {
   }
 }
 
-type EvidenceItem = { title?: string; link?: string; snippet?: string };
+type EvidenceItem = { title?: string; link?: string; snippet?: string; image?: string };
 
 function buildProMessages(user: string, evidence: EvidenceItem[], history: any[] = [], preferenceHint = '') {
   const pref = preferenceHint ? `${preferenceHint}\n\n` : '';

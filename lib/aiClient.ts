@@ -97,7 +97,7 @@ export async function callLlamaChat(messages: any[], modelId?: string): Promise<
   return callOpenRouterChat(messages, selectedModel);
 }
 
-export async function fetchSerperEvidence(query: string): Promise<{ title?: string; link?: string; snippet?: string }[]> {
+export async function fetchSerperEvidence(query: string): Promise<{ title?: string; link?: string; snippet?: string; image?: string }[]> {
   if (!process.env.SERPER_API_KEY) return [];
   try {
     const r = await fetchWithRetry('https://google.serper.dev/search', {
@@ -111,42 +111,42 @@ export async function fetchSerperEvidence(query: string): Promise<{ title?: stri
     });
     const j = await r.json().catch(() => ({}));
     const items = Array.isArray(j?.organic) ? j.organic : [];
-    return items.slice(0, 5).map((x: any) => ({ title: x?.title, link: x?.link, snippet: x?.snippet }));
+    return items.slice(0, 5).map((x: any) => ({ title: x?.title, link: x?.link, snippet: x?.snippet, image: x?.imageUrl || x?.thumbnailUrl }));
   } catch (e) {
     logNetworkError(e, 'Serper evidence fetch', 'https://google.serper.dev/search');
     return [];
   }
 }
 
-export async function fetchSerpApiEvidence(query: string): Promise<{ title?: string; link?: string; snippet?: string }[]> {
+export async function fetchSerpApiEvidence(query: string): Promise<{ title?: string; link?: string; snippet?: string; image?: string }[]> {
   if (!process.env.SERPAPI_KEY) return [];
   try {
     const url = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(query)}&num=5&api_key=${process.env.SERPAPI_KEY}`;
     const r = await fetchWithRetry(url, { method: 'GET', cache: 'no-store' });
     const j = await r.json().catch(() => ({}));
     const items = Array.isArray(j?.organic_results) ? j.organic_results : [];
-    return items.slice(0, 5).map((x: any) => ({ title: x?.title, link: x?.link, snippet: x?.snippet || x?.snippet_highlighted_words?.join(' ') }));
+    return items.slice(0, 5).map((x: any) => ({ title: x?.title, link: x?.link, snippet: x?.snippet || x?.snippet_highlighted_words?.join(' '), image: x?.thumbnail }));
   } catch (e) {
     logNetworkError(e, 'SerpAPI evidence fetch', 'https://serpapi.com');
     return [];
   }
 }
 
-export async function fetchNewsApiEvidence(query: string): Promise<{ title?: string; link?: string; snippet?: string }[]> {
+export async function fetchNewsApiEvidence(query: string): Promise<{ title?: string; link?: string; snippet?: string; image?: string }[]> {
   if (!process.env.NEWS_API_KEY) return [];
   try {
     const url = `https://newsapi.org/v2/everything?q=${encodeURIComponent(query)}&pageSize=5&sortBy=publishedAt`;
     const r = await fetchWithRetry(url, { method: 'GET', headers: { 'X-Api-Key': process.env.NEWS_API_KEY as string }, cache: 'no-store' });
     const j = await r.json().catch(() => ({}));
     const items = Array.isArray(j?.articles) ? j.articles : [];
-    return items.slice(0, 5).map((a: any) => ({ title: a?.title, link: a?.url, snippet: a?.description }));
+    return items.slice(0, 5).map((a: any) => ({ title: a?.title, link: a?.url, snippet: a?.description, image: a?.urlToImage }));
   } catch (e) {
     logNetworkError(e, 'NewsAPI evidence fetch', 'https://newsapi.org');
     return [];
   }
 }
 
-export async function fetchTavilyEvidence(query: string): Promise<{ title?: string; link?: string; snippet?: string }[]> {
+export async function fetchTavilyEvidence(query: string): Promise<{ title?: string; link?: string; snippet?: string; image?: string }[]> {
   if (!process.env.TAVILY_API_KEY) return [];
   try {
     const r = await fetchWithRetry('https://api.tavily.com/search', {
@@ -157,21 +157,21 @@ export async function fetchTavilyEvidence(query: string): Promise<{ title?: stri
     });
     const j = await r.json().catch(() => ({}));
     const items = Array.isArray(j?.results) ? j.results : [];
-    return items.slice(0, 5).map((x: any) => ({ title: x?.title, link: x?.url, snippet: x?.content || x?.snippet }));
+    return items.slice(0, 5).map((x: any) => ({ title: x?.title, link: x?.url, snippet: x?.content || x?.snippet, image: x?.image }));
   } catch (e) {
     logNetworkError(e, 'Tavily evidence fetch', 'https://api.tavily.com/search');
     return [];
   }
 }
 
-export async function fetchYouTubeEvidence(query: string): Promise<{ title?: string; link?: string; snippet?: string }[]> {
+export async function fetchYouTubeEvidence(query: string): Promise<{ title?: string; link?: string; snippet?: string; image?: string }[]> {
   if (!process.env.YOUTUBE_API_KEY) return [];
   try {
     const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=5&q=${encodeURIComponent(query)}&key=${process.env.YOUTUBE_API_KEY}`;
     const r = await fetchWithRetry(url, { method: 'GET', cache: 'no-store' });
     const j = await r.json().catch(() => ({}));
     const items = Array.isArray(j?.items) ? j.items : [];
-    return items.slice(0, 5).map((v: any) => ({ title: v?.snippet?.title, link: `https://www.youtube.com/watch?v=${v?.id?.videoId}`, snippet: v?.snippet?.description }));
+    return items.slice(0, 5).map((v: any) => ({ title: v?.snippet?.title, link: `https://www.youtube.com/watch?v=${v?.id?.videoId}`, snippet: v?.snippet?.description, image: v?.snippet?.thumbnails?.high?.url || v?.snippet?.thumbnails?.medium?.url || v?.snippet?.thumbnails?.default?.url }));
   } catch (e) {
     logNetworkError(e, 'YouTube evidence fetch', 'https://www.googleapis.com/youtube/v3/search');
     return [];
@@ -187,7 +187,7 @@ export async function aggregateEvidence(query: string) {
     fetchYouTubeEvidence(query),
   ]);
   // Deduplicate by link
-  const map = new Map<string, { title?: string; link?: string; snippet?: string }>();
+  const map = new Map<string, { title?: string; link?: string; snippet?: string; image?: string }>();
   for (const arr of [a, b, c, d, e]) {
     for (const item of arr) {
       const key = (item.link || item.title || '').trim();

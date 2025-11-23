@@ -134,9 +134,9 @@ const getAvailableModels = (userPlan: string, isAnonymous: boolean = false): Mod
       {
         id: "gpt-oss-20b-or",
         name: "GPT-OSS-20B",
-        description: "Open-source GPT model via OpenRouter",
+        description: "Open-source GPT model (OpenAI)",
         badge: "Free",
-        logo: "/Images/openrouter-color.svg",
+        logo: "/Images/OpenAI_logo_2025_(symbol).svg",
       },
     ];
   }
@@ -146,7 +146,7 @@ const getAvailableModels = (userPlan: string, isAnonymous: boolean = false): Mod
     {
       id: "llama-3.3-70b-or",
       name: "Llama 3.3 70B",
-      description: "Advanced conversational AI via OpenRouter",
+      description: "Advanced conversational AI (Meta)",
       badge: "Free",
       logo: "/Images/Meta_Platforms_logo.svg",
     },
