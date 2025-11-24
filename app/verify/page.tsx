@@ -458,6 +458,8 @@ function VerifyPage() {
   const [showLoginWarning, setShowLoginWarning] = useState(false);
   const [lastUsedModel, setLastUsedModel] = useState<string | undefined>(undefined);
   const [creditsRefreshKey, setCreditsRefreshKey] = useState(0);
+  const [creditsData, setCreditsData] = useState<{ daily: number; monthly: number; plan: string } | null>(null);
+  const [creditsExhausted, setCreditsExhausted] = useState(false);
 
   // Sidebar defaults to closed - removed auto-open behavior
   // Sidebar is hidden for anonymous users
@@ -770,13 +772,59 @@ function VerifyPage() {
     );
   };
 
+  // Show quota modal
+  function showQuotaModal(remaining?: { daily: number; monthly: number; plan: string }) {
+    setError(null);
+    const div = document.createElement('div');
+    div.className = 'fixed inset-0 z-50 flex items-center justify-center';
+    div.innerHTML = `
+      <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+      <div class="relative z-10 w-full max-w-xl overflow-hidden rounded-3xl border shadow-[0_20px_60px_-12px_rgba(0,0,0,0.25),0_0_0_1px_rgba(255,255,255,0.05)_inset]" style="background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%); border-color: color-mix(in oklab, var(--border) 50%, transparent); backdrop-filter: blur(16px) saturate(180%)">
+        <div class="px-8 py-12 text-center text-white" style="background: linear-gradient(135deg, var(--primary) 0%, #1e3a8a 100%)">
+          <button id="quota-cancel" class="absolute right-4 top-4 text-white/80 transition-colors hover:text-white" aria-label="Close">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 6L18 18M6 18L18 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+          <div class="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-white/10 backdrop-blur-sm shadow-lg">
+            <svg class="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          </div>
+          <h3 class="mb-2 text-3xl font-bold">You've reached your limit</h3>
+          <p class="text-lg text-white/90">Upgrade to continue</p>
+        </div>
+        <div class="px-8 py-8" style="background: #ffffff">
+          <div class="mb-6 rounded-2xl border p-4 shadow-sm" style="background: #ffffff; border-color: var(--border)">
+            <p class="text-sm" style="color: var(--muted-foreground)">Your ${remaining?.plan || 'free'} plan has reached its credit limit. Daily credits reset at midnight in your local timezone.</p>
+          </div>
+          <div class="flex flex-col gap-3 sm:flex-row">
+            <button id="quota-upgrade" class="flex-1 rounded-xl px-6 py-4 font-semibold text-white shadow-lg transition-all hover:shadow-xl hover:scale-[1.02]" style="background: var(--primary)">Upgrade plan</button>
+            <button id="quota-cancel-2" class="rounded-xl border-2 px-6 py-4 font-semibold transition-all hover:scale-[1.02]" style="border-color: var(--border); color: var(--foreground)">Maybe later</button>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(div);
+    const close = () => {
+      div.remove();
+      setCreditsExhausted(false);
+    };
+    div.querySelector('#quota-cancel')?.addEventListener('click', close);
+    div.querySelector('#quota-cancel-2')?.addEventListener('click', close);
+    div.querySelector('#quota-upgrade')?.addEventListener('click', () => { window.location.href = '/pricing'; });
+  }
+
   // Load conversations when user is authenticated
   useEffect(() => {
     if (user) {
       loadConversations();
       loadUserPlan();
+      checkCredits(); // Check credits on mount
     }
   }, [user]);
+
+  // Refresh credits when refreshKey changes
+  useEffect(() => {
+    if (user?.uid && creditsRefreshKey > 0) {
+      checkCredits();
+    }
+  }, [creditsRefreshKey, user?.uid]);
 
   // Load conversation privacy when conversation changes
   useEffect(() => {
@@ -806,6 +854,45 @@ function VerifyPage() {
     } catch (error) {
       setUserPlan('free'); // Default to free plan on error
     }
+  }
+
+  // Check credits availability
+  async function checkCredits(): Promise<boolean> {
+    if (!user?.uid) return true; // Allow anonymous users
+    
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const response = await fetch(`/api/user-tokens?uid=${user.uid}&t=${Date.now()}&tz=${encodeURIComponent(tz)}`, { cache: 'no-store' });
+      const data = await response.json();
+      
+      if (response.ok) {
+        const planTotals: Record<string, { daily: number; monthly: number }> = {
+          free: { daily: 20, monthly: 100 },
+          pro: { daily: 200, monthly: 2000 },
+          enterprise: { daily: Number.MAX_SAFE_INTEGER, monthly: Number.MAX_SAFE_INTEGER },
+        };
+        const plan = data.plan || 'free';
+        const totals = planTotals[plan] || planTotals.free;
+        const dailyRemaining = data.tokensDaily ?? 0;
+        const monthlyRemaining = data.tokensMonthly ?? 0;
+        
+        setCreditsData({
+          daily: dailyRemaining,
+          monthly: monthlyRemaining,
+          plan: plan
+        });
+        
+        // Check if credits are exhausted (need at least 1 credit for a verification)
+        const hasCredits = (plan === 'enterprise') || (dailyRemaining > 0 && monthlyRemaining > 0);
+        setCreditsExhausted(!hasCredits);
+        
+        return hasCredits;
+      }
+    } catch (error) {
+      console.error('Failed to check credits:', error);
+    }
+    
+    return true; // Default to allowing if check fails
   }
 
   // Check for pending verification from hero section (works for both logged-in and anonymous users)
@@ -959,6 +1046,15 @@ function VerifyPage() {
       return;
     }
     
+    // Check credits before proceeding (for logged-in users)
+    if (user?.uid) {
+      const hasCredits = await checkCredits();
+      if (!hasCredits) {
+        setError('You have exhausted your daily or monthly credit limit. Please upgrade your plan or wait for credits to reset.');
+        return;
+      }
+    }
+    
     setLoading(true);
     setTimeline([]);
     setError(null);
@@ -1053,6 +1149,23 @@ function VerifyPage() {
           return;
         }
         
+        // Handle quota errors from /api/chat
+        if (chatRes.status === 402 && chatJson?.error === 'quota') {
+          setLoading(false);
+          setCreditsExhausted(true);
+          if (chatJson.remaining) {
+            setCreditsData({
+              daily: chatJson.remaining.daily || 0,
+              monthly: chatJson.remaining.monthly || 0,
+              plan: chatJson.remaining.plan || 'free'
+            });
+          }
+          // Refresh credits to update UI
+          setCreditsRefreshKey(prev => prev + 1);
+          showQuotaModal(chatJson.remaining);
+          return;
+        }
+        
         if (!chatRes.ok) throw new Error(chatJson?.error || 'Chat failed');
 
         // Update anonymous chat info if present (for anonymous users)
@@ -1097,6 +1210,10 @@ function VerifyPage() {
         
         // Refresh credit balance after successful chat verification
         setCreditsRefreshKey(prev => prev + 1);
+        // Re-check credits to update exhausted state
+        if (user?.uid) {
+          await checkCredits();
+        }
         
         if (targetConversationId && user) {
           if (regenerate) {
@@ -1230,42 +1347,27 @@ function VerifyPage() {
       
       // Refresh credit balance after successful verification
       setCreditsRefreshKey(prev => prev + 1);
+      // Re-check credits to update exhausted state
+      if (user?.uid) {
+        await checkCredits();
+      }
       
       // Clear timeline when verification completes
       setTimeline([]);
     } else {
         if (r.status === 402 && j?.error === 'quota') {
-          setError(null);
-          const div = document.createElement('div');
-          div.className = 'fixed inset-0 z-50 flex items-center justify-center';
-          div.innerHTML = `
-            <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
-            <div class="relative z-10 w-full max-w-xl overflow-hidden rounded-3xl border shadow-[0_20px_60px_-12px_rgba(0,0,0,0.25),0_0_0_1px_rgba(255,255,255,0.05)_inset]" style="background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%); border-color: color-mix(in oklab, var(--border) 50%, transparent); backdrop-filter: blur(16px) saturate(180%)">
-              <div class="px-8 py-12 text-center text-white" style="background: linear-gradient(135deg, var(--primary) 0%, #1e3a8a 100%)">
-                <button id="quota-cancel" class="absolute right-4 top-4 text-white/80 transition-colors hover:text-white" aria-label="Close">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 6L18 18M6 18L18 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-                </button>
-                <div class="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-white/10 backdrop-blur-sm shadow-lg">
-                  <svg class="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                </div>
-                <h3 class="mb-2 text-3xl font-bold">You've reached your limit</h3>
-                <p class="text-lg text-white/90">Upgrade to continue</p>
-              </div>
-              <div class="px-8 py-8" style="background: #ffffff">
-                <div class="mb-6 rounded-2xl border p-4 shadow-sm" style="background: #ffffff; border-color: var(--border)">
-                  <p class="text-sm" style="color: var(--muted-foreground)">Your ${j?.remaining?.plan || 'free'} plan has reached its token limit. Daily tokens reset at 12:00 AM local time.</p>
-                </div>
-                <div class="flex flex-col gap-3 sm:flex-row">
-                  <button id="quota-upgrade" class="flex-1 rounded-xl px-6 py-4 font-semibold text-white shadow-lg transition-all hover:shadow-xl hover:scale-[1.02]" style="background: var(--primary)">Upgrade plan</button>
-                  <button id="quota-cancel-2" class="rounded-xl border-2 px-6 py-4 font-semibold transition-all hover:scale-[1.02]" style="border-color: var(--border); color: var(--foreground)">Maybe later</button>
-                </div>
-              </div>
-            </div>`;
-          document.body.appendChild(div);
-          const close = () => div.remove();
-          div.querySelector('#quota-cancel')?.addEventListener('click', close);
-          div.querySelector('#quota-cancel-2')?.addEventListener('click', close);
-          div.querySelector('#quota-upgrade')?.addEventListener('click', () => { window.location.href = '/pricing'; });
+          setLoading(false);
+          setCreditsExhausted(true);
+          if (j.remaining) {
+            setCreditsData({
+              daily: j.remaining.daily || 0,
+              monthly: j.remaining.monthly || 0,
+              plan: j.remaining.plan || 'free'
+            });
+          }
+          // Refresh credits to update UI
+          setCreditsRefreshKey(prev => prev + 1);
+          showQuotaModal(j.remaining);
         } else {
           setError(j.error || 'Verification failed');
         }
@@ -2088,11 +2190,35 @@ function VerifyPage() {
 
           {/* Mobile Composer */}
           <div className="border-t border-gray-200 px-4 py-4 overflow-hidden">
-            <AI_Prompt 
-              onSend={onVerify}
-              placeholder="What's in your mind?..."
-              className="w-full max-w-full"
-            />
+            <div className="w-full max-w-2xl mx-auto">
+              {creditsExhausted && user && (
+                <div className="mb-3 rounded-lg border border-orange-200 bg-orange-50/50 p-3">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 text-orange-600 flex-shrink-0" />
+                    <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+                      <span className="text-xs text-orange-900 font-medium">
+                        Credits exhausted
+                      </span>
+                      <span className="text-xs text-orange-700/80">
+                        {creditsData?.plan === 'free' ? 'Daily' : 'Daily/monthly'} limit reached
+                        {creditsData?.plan !== 'enterprise' && ' • Resets at midnight'}
+                      </span>
+                      <button
+                        onClick={() => window.location.href = '/pricing'}
+                        className="ml-auto px-2.5 py-1 text-xs font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-md transition-colors shadow-sm hover:shadow"
+                      >
+                        Upgrade
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+              <AI_Prompt 
+                onSend={onVerify}
+                placeholder={creditsExhausted && user ? "Credits exhausted - upgrade to continue" : "What's in your mind?..."}
+                className="w-full"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -2739,20 +2865,43 @@ function VerifyPage() {
         
             {/* Composer */}
             <div className="px-6 py-5">
-          {error && (
-                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">{error}</div>
+              {error && (
+                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-red-800 max-w-2xl mx-auto">{error}</div>
               )}
-
               <div className="flex justify-center">
-                <div className="w-full max-w-3xl border-t border-gray-200 pt-5">
-                  <AI_Prompt 
-                    onSend={onVerify}
-                    placeholder="What's in your mind?..."
-                    className="w-full"
-                  />
-          </div>
-        </div>
-      </div>
+                <div className="w-full max-w-2xl">
+                  {creditsExhausted && user && (
+                    <div className="mb-3 sm:mb-4 rounded-lg border border-orange-200 bg-orange-50/50 p-3 sm:p-3.5 md:p-3">
+                      <div className="flex items-center gap-2 sm:gap-2.5">
+                        <AlertTriangle className="h-4 w-4 sm:h-4 sm:w-4 text-orange-600 flex-shrink-0" />
+                        <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+                          <span className="text-xs sm:text-sm text-orange-900 font-medium">
+                            Credits exhausted
+                          </span>
+                          <span className="text-xs sm:text-sm text-orange-700/80">
+                            {creditsData?.plan === 'free' ? 'Daily' : 'Daily/monthly'} limit reached
+                            {creditsData?.plan !== 'enterprise' && ' • Resets at midnight'}
+                          </span>
+                          <button
+                            onClick={() => window.location.href = '/pricing'}
+                            className="ml-auto px-2.5 py-1 sm:px-3 sm:py-1.5 text-xs sm:text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-md transition-colors shadow-sm hover:shadow"
+                          >
+                            Upgrade
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <div className="border-t border-gray-200 pt-5">
+                    <AI_Prompt 
+                      onSend={onVerify}
+                      placeholder={creditsExhausted && user ? "Credits exhausted - upgrade to continue" : "What's in your mind?..."}
+                      className="w-full"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
           </main>
         </div>
       </div>
