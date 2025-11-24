@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { callFakeVerifierModel, callLlamaChat, aggregateEvidence } from '@/lib/aiClient';
 import { fetchWithRetry, logNetworkError } from '@/lib/network-utils';
 import { db } from '@/lib/firebaseAdmin';
+import { ensureQuota } from '@/lib/quota';
 
 async function getUserPlan(uid: string): Promise<'free' | 'pro' | 'enterprise'> {
   try {
@@ -390,8 +391,55 @@ export async function POST(req: NextRequest) {
     const memText = userMems.length ? `\n\nKnown user profile and preferences:\n${userMems.map(m => `- ${m}`).join('\n')}` : '';
     const msgs = buildProMessages(text + memText, evidence, Array.isArray(history) ? history : [], pref);
     // Pass the model ID to route to correct provider (modelId already declared above)
-    let reply = await withRetry(() => callLlamaChat(msgs, modelId));
+    const llamaResult = await withRetry(() => callLlamaChat(msgs, modelId));
+    let reply = llamaResult.content;
     if (needsEvidence && evidence.length > 0) reply = sanitizeReplyWithEvidence(reply, evidence);
+    
+    // Deduct credits for logged-in users based on actual API cost
+    // Convert cost to credits: 1 credit = $0.01 (or use tokens directly: 1 credit per 1000 tokens)
+    if (!isAnonymous && userId) {
+      let creditsToDeduct = 1; // Default fallback
+      
+      if (llamaResult.cost !== undefined && llamaResult.cost > 0) {
+        // Convert cost in USD to credits (1 credit = $0.01)
+        creditsToDeduct = Math.ceil(llamaResult.cost * 100);
+      } else if (llamaResult.usage?.total_tokens) {
+        // Fallback: use tokens (1 credit per 1000 tokens, minimum 1)
+        creditsToDeduct = Math.max(1, Math.ceil(llamaResult.usage.total_tokens / 1000));
+      }
+      
+      try {
+        await ensureQuota(userId, creditsToDeduct);
+      } catch (q: any) {
+        // Fetch remaining counters for UI hints
+        let remaining = { daily: 0, monthly: 0, plan: 'free' as string };
+        try {
+          if (userId && db) {
+            const snap = await db.collection('tokenUsage').doc(userId).get();
+            const u = snap.data() as any;
+            const plan = (u?.plan || 'free') as 'free' | 'pro' | 'enterprise';
+            const planTotals = {
+              free: { daily: 20, monthly: 100 },
+              pro: { daily: 200, monthly: 2000 },
+              enterprise: { daily: 500, monthly: 5000 }
+            };
+            const totals = planTotals[plan] || planTotals.free;
+            const dailyUsed = u?.dailyUsed ?? 0;
+            const monthlyUsed = u?.used ?? 0;
+            remaining = { 
+              daily: Math.max(0, totals.daily - dailyUsed), 
+              monthly: Math.max(0, totals.monthly - monthlyUsed), 
+              plan: plan 
+            };
+          }
+        } catch {}
+        return new Response(
+          JSON.stringify({ error: 'quota', message: 'Token quota exceeded', remaining }),
+          { status: 402, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+    
     // fire-and-forget auto-memories
     saveAutoMemories((userId || '').toString(), text, reply);
     

@@ -38,9 +38,8 @@ import { TextShimmer } from '@/components/ui/text-shimmer';
 import { MemoryManager } from '@/components/MemoryManager';
 import { MemoryNotification } from '@/components/MemoryNotification';
 import { useAuth } from '@/contexts/AuthContext';
-import { useAnimatedText } from '@/components/ui/animated-text';
 
-function TokenCounters({ uid }: { uid?: string | null }) {
+function TokenCounters({ uid, refreshKey }: { uid?: string | null; refreshKey?: number }) {
   const [data, setData] = useState<{ daily: number; monthly: number; plan: string } | null>(null);
   useEffect(() => {
     if (!uid) return;
@@ -60,7 +59,7 @@ function TokenCounters({ uid }: { uid?: string | null }) {
     window.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('focus', onFocus);
     return () => { mounted = false; };
-  }, [uid]);
+  }, [uid, refreshKey]);
   if (!data) return null;
 
   const planTotals: Record<string, { daily: number; monthly: number; color: string }> = {
@@ -107,7 +106,7 @@ function TokenCounters({ uid }: { uid?: string | null }) {
   );
 }
 
-function InlineCredits({ uid }: { uid?: string | null }) {
+function InlineCredits({ uid, refreshKey }: { uid?: string | null; refreshKey?: number }) {
   const [data, setData] = useState<{ daily: number; monthly: number; plan: string } | null>(null);
   useEffect(() => {
     if (!uid) return;
@@ -115,13 +114,13 @@ function InlineCredits({ uid }: { uid?: string | null }) {
     (async () => {
       try {
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        const r = await fetch(`/api/user-tokens?uid=${uid}&tz=${encodeURIComponent(tz)}`);
+        const r = await fetch(`/api/user-tokens?uid=${uid}&t=${Date.now()}&tz=${encodeURIComponent(tz)}`, { cache: 'no-store' });
         const j = await r.json();
         if (mounted && r.ok) setData({ daily: j.tokensDaily ?? 0, monthly: j.tokensMonthly ?? 0, plan: j.plan || 'free' });
       } catch {}
     })();
     return () => { mounted = false; };
-  }, [uid]);
+  }, [uid, refreshKey]);
   if (!data) return null;
 
   const planTotals: Record<string, { daily: number; monthly: number; color: string }> = {
@@ -458,6 +457,7 @@ function VerifyPage() {
   const [anonymousChatInfo, setAnonymousChatInfo] = useState<{ count: number; limit: number; remaining: number; showWarning: boolean } | null>(null);
   const [showLoginWarning, setShowLoginWarning] = useState(false);
   const [lastUsedModel, setLastUsedModel] = useState<string | undefined>(undefined);
+  const [creditsRefreshKey, setCreditsRefreshKey] = useState(0);
 
   // Sidebar defaults to closed - removed auto-open behavior
   // Sidebar is hidden for anonymous users
@@ -738,7 +738,7 @@ function VerifyPage() {
     return html;
   }
 
-  // Assistant Message Component with typing animation
+  // Assistant Message Component
   const AssistantMessage = ({ 
     message, 
     isLastMessage, 
@@ -748,12 +748,6 @@ function VerifyPage() {
     isLastMessage: boolean; 
     isStreaming: boolean;
   }) => {
-    // Use the new animated-text component for smooth character-by-character typing
-    // Only animate the last message for better UX
-    const shouldAnimate = isLastMessage;
-    const animatedText = useAnimatedText(shouldAnimate ? message.content : '', '');
-    const contentToDisplay = shouldAnimate ? animatedText : message.content;
-
     return (
       <>
         <div className="prose prose-sm sm:prose-base max-w-none text-gray-900 leading-relaxed">
@@ -763,7 +757,7 @@ function VerifyPage() {
               '--tw-prose-links': 'var(--primary)',
               '--tw-prose-code': 'var(--primary)',
             } as React.CSSProperties}
-            dangerouslySetInnerHTML={{ __html: mdToHtml(contentToDisplay, message.evidence) }} 
+            dangerouslySetInnerHTML={{ __html: mdToHtml(message.content, message.evidence) }} 
           />
         </div>
         {message.evidence && message.evidence.length > 0 && (
@@ -1100,6 +1094,10 @@ function VerifyPage() {
           setMessages(prev => [...prev, assistantMessage]);
         }
         await processAutoMemories(inputText, assistantMessage.content);
+        
+        // Refresh credit balance after successful chat verification
+        setCreditsRefreshKey(prev => prev + 1);
+        
         if (targetConversationId && user) {
           if (regenerate) {
             // Update last assistant message in DB when regenerating
@@ -1229,6 +1227,9 @@ function VerifyPage() {
           // Refresh conversations to pick up any auto-updated title
           await loadConversations();
         }
+      
+      // Refresh credit balance after successful verification
+      setCreditsRefreshKey(prev => prev + 1);
       
       // Clear timeline when verification completes
       setTimeline([]);
@@ -1891,8 +1892,8 @@ function VerifyPage() {
                   ) : (
                     <>
                       {/* Default for Anonymous Users */}
-                      <h2 className="mb-2 text-xl font-bold text-gray-900">Start a verification</h2>
-                      <p className="text-sm text-gray-600">Paste a URL or text to verify its authenticity</p>
+                  <h2 className="mb-2 text-xl font-bold text-gray-900">Start a verification</h2>
+                  <p className="text-sm text-gray-600">Paste a URL or text to verify its authenticity</p>
                     </>
                   )}
                 </div>
@@ -1908,13 +1909,13 @@ function VerifyPage() {
                           <div className="mb-4 flex items-center gap-3">
                             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 shadow-sm">
                               <img src="/Images/Fakeverifier-official-logo.png" alt="FakeVerifier" className="h-5 w-5 object-contain" />
-                            </div>
+                        </div>
                             <div className="flex items-center gap-2">
                               <span className="text-sm font-semibold text-gray-900">FakeVerifier</span>
                               <CheckCircle2 className="h-4 w-4" style={{ color: 'var(--primary)' }} />
-                            </div>
-                          </div>
-                          
+                        </div>
+                        </div>
+
                           {/* Message content */}
                           <div className="mb-4">
                             <AssistantMessage 
@@ -1967,55 +1968,22 @@ function VerifyPage() {
                           </div>
 
                           {/* Premium Feedback tray on mobile */}
-                          {feedbackForMessageId === m.id && (
+                        {feedbackForMessageId === m.id && (
                             <div className="mt-4 rounded-xl border border-gray-200 bg-gradient-to-br from-gray-50 to-white p-4 shadow-sm">
                               <div className="mb-3 text-sm font-semibold text-gray-900">Tell us more:</div>
                               <div className="flex flex-wrap gap-2 mb-4">
-                                {(dynamicReasons.length ? dynamicReasons : ['Not clear enough','Missing context','Not factual','Too verbose']).map((label) => (
-                                  <button
-                                    key={label}
-                                    disabled={feedbackSubmitting}
-                                    onClick={async () => {
-                                      if (!user || !currentConversationId) return;
-                                      try {
-                                        setFeedbackSubmitting(true);
-                                        await fetch('/api/feedback', {
-                                          method: 'POST',
-                                          headers: { 'Content-Type': 'application/json' },
-                                          body: JSON.stringify({ uid: user.uid, conversationId: currentConversationId, messageId: m.id, type: 'down', reason: label })
-                                        });
-                                      } catch (e) {
-                                        // Silent fail for feedback
-                                      } finally {
-                                        setFeedbackSubmitting(false);
-                                        setFeedbackForMessageId(null);
-                                      }
-                                    }}
-                                    className="rounded-full border border-gray-300 bg-white px-4 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                                  >
-                                    {label}
-                                  </button>
-                                ))}
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <input 
-                                  id={`note-${m.id}`} 
-                                  className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all" 
-                                  placeholder="Optional note (max 120 chars)" 
-                                  maxLength={120} 
-                                />
+                              {(dynamicReasons.length ? dynamicReasons : ['Not clear enough','Missing context','Not factual','Too verbose']).map((label) => (
                                 <button
+                                  key={label}
                                   disabled={feedbackSubmitting}
                                   onClick={async () => {
-                                    const inputEl = document.getElementById(`note-${m.id}`) as HTMLInputElement | null;
-                                    const note = inputEl?.value || '';
                                     if (!user || !currentConversationId) return;
                                     try {
                                       setFeedbackSubmitting(true);
                                       await fetch('/api/feedback', {
                                         method: 'POST',
                                         headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ uid: user.uid, conversationId: currentConversationId, messageId: m.id, type: 'down', reason: 'More...', note })
+                                        body: JSON.stringify({ uid: user.uid, conversationId: currentConversationId, messageId: m.id, type: 'down', reason: label })
                                       });
                                     } catch (e) {
                                       // Silent fail for feedback
@@ -2024,21 +1992,54 @@ function VerifyPage() {
                                       setFeedbackForMessageId(null);
                                     }
                                   }}
-                                  className="rounded-lg px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:shadow-md transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                                  style={{ background: 'var(--primary)', color: 'var(--primary-foreground)' }}
+                                    className="rounded-full border border-gray-300 bg-white px-4 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                                 >
-                                  Send
+                                  {label}
                                 </button>
-                                <button
-                                  disabled={feedbackSubmitting}
-                                  onClick={() => setFeedbackForMessageId(null)}
-                                  className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
+                              ))}
                             </div>
-                          )}
+                              <div className="flex items-center gap-2">
+                                <input 
+                                  id={`note-${m.id}`} 
+                                  className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all" 
+                                  placeholder="Optional note (max 120 chars)" 
+                                  maxLength={120} 
+                                />
+                              <button
+                                disabled={feedbackSubmitting}
+                                onClick={async () => {
+                                  const inputEl = document.getElementById(`note-${m.id}`) as HTMLInputElement | null;
+                                  const note = inputEl?.value || '';
+                                  if (!user || !currentConversationId) return;
+                                  try {
+                                    setFeedbackSubmitting(true);
+                                    await fetch('/api/feedback', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ uid: user.uid, conversationId: currentConversationId, messageId: m.id, type: 'down', reason: 'More...', note })
+                                    });
+                                  } catch (e) {
+                                    // Silent fail for feedback
+                                  } finally {
+                                    setFeedbackSubmitting(false);
+                                    setFeedbackForMessageId(null);
+                                  }
+                                }}
+                                  className="rounded-lg px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:shadow-md transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                                style={{ background: 'var(--primary)', color: 'var(--primary-foreground)' }}
+                              >
+                                Send
+                              </button>
+                              <button
+                                disabled={feedbackSubmitting}
+                                onClick={() => setFeedbackForMessageId(null)}
+                                  className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )}
                         </div>
                       </div>
                     ) : (
@@ -2076,9 +2077,9 @@ function VerifyPage() {
                   <div className="flex items-center gap-3 text-gray-600">
                     <div className="animate-spin rounded-full h-5 w-5 border-2 border-gray-200" style={{ borderTopColor: 'var(--primary)' }}></div>
                     <TextShimmer className='font-mono text-sm [--base-color:var(--primary)]'>
-                      Analyzing your input...
-                    </TextShimmer>
-                  </div>
+                        Analyzing your input...
+                      </TextShimmer>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2291,7 +2292,7 @@ function VerifyPage() {
                     {/* Menu Items */}
                     <div className="py-1">
                       {/* Credit Balance block above Upgrade */}
-                      <InlineCredits uid={user?.uid} />
+                      <InlineCredits uid={user?.uid} refreshKey={creditsRefreshKey} />
                       <button 
                         onClick={(e) => {
                           e.stopPropagation();
@@ -2482,8 +2483,8 @@ function VerifyPage() {
                     ) : (
                       <>
                         {/* Default for Anonymous Users */}
-                        <h2 className="mb-2 text-xl sm:text-2xl font-bold text-gray-900">Start a verification</h2>
-                        <p className="text-sm sm:text-base text-gray-600">Paste a URL or text to verify its authenticity</p>
+                    <h2 className="mb-2 text-xl sm:text-2xl font-bold text-gray-900">Start a verification</h2>
+                    <p className="text-sm sm:text-base text-gray-600">Paste a URL or text to verify its authenticity</p>
                       </>
                     )}
               </div>
@@ -2499,11 +2500,11 @@ function VerifyPage() {
                             <div className="mb-4 flex items-center gap-3">
                               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 shadow-sm">
                               <img src="/Images/Fakeverifier-official-logo.png" alt="FakeVerifier" className="h-5 w-5 object-contain" />
-                            </div>
+                          </div>
                             <div className="flex items-center gap-2">
                               <span className="text-sm font-semibold text-gray-900">FakeVerifier</span>
                               <CheckCircle2 className="h-4 w-4" style={{ color: 'var(--primary)' }} />
-                            </div>
+                    </div>
                           </div>
                             
                             {/* Message content */}
@@ -2554,59 +2555,26 @@ function VerifyPage() {
                                 title="Regenerate"
                               >
                                 <RotateCcw className="h-4 w-4" />
-                              </button>
-                            </div>
+                          </button>
+                        </div>
 
                             {/* Premium Feedback tray when thumbs down */}
-                            {feedbackForMessageId === m.id && (
+                          {feedbackForMessageId === m.id && (
                               <div className="mt-4 rounded-xl border border-gray-200 bg-gradient-to-br from-gray-50 to-white p-4 shadow-sm">
                                 <div className="mb-3 text-sm font-semibold text-gray-900">Tell us more:</div>
                                 <div className="flex flex-wrap gap-2 mb-4">
-                                  {(dynamicReasons.length ? dynamicReasons : ['Not clear enough','Missing context','Not factual','Too verbose']).map((label) => (
-                                    <button
-                                      key={label}
-                                      disabled={feedbackSubmitting}
-                                      onClick={async () => {
-                                        if (!user || !currentConversationId) return;
-                                        try {
-                                          setFeedbackSubmitting(true);
-                                          await fetch('/api/feedback', {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({ uid: user.uid, conversationId: currentConversationId, messageId: m.id, type: 'down', reason: label })
-                                          });
-                                        } catch (e) {
-                                          // Silent fail for feedback
-                                        } finally {
-                                          setFeedbackSubmitting(false);
-                                          setFeedbackForMessageId(null);
-                                        }
-                                      }}
-                                      className="rounded-full border border-gray-300 bg-white px-4 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                                    >
-                                      {label}
-                                    </button>
-                                  ))}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <input 
-                                    id={`note-${m.id}`} 
-                                    className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all" 
-                                    placeholder="Optional note (max 120 chars)" 
-                                    maxLength={120} 
-                                  />
+                                {(dynamicReasons.length ? dynamicReasons : ['Not clear enough','Missing context','Not factual','Too verbose']).map((label) => (
                                   <button
+                                    key={label}
                                     disabled={feedbackSubmitting}
                                     onClick={async () => {
-                                      const inputEl = document.getElementById(`note-${m.id}`) as HTMLInputElement | null;
-                                      const note = inputEl?.value || '';
                                       if (!user || !currentConversationId) return;
                                       try {
                                         setFeedbackSubmitting(true);
                                         await fetch('/api/feedback', {
                                           method: 'POST',
                                           headers: { 'Content-Type': 'application/json' },
-                                          body: JSON.stringify({ uid: user.uid, conversationId: currentConversationId, messageId: m.id, type: 'down', reason: 'More...', note })
+                                          body: JSON.stringify({ uid: user.uid, conversationId: currentConversationId, messageId: m.id, type: 'down', reason: label })
                                         });
                                       } catch (e) {
                                         // Silent fail for feedback
@@ -2615,26 +2583,59 @@ function VerifyPage() {
                                         setFeedbackForMessageId(null);
                                       }
                                     }}
-                                    className="rounded-lg px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:shadow-md transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                                    style={{ background: 'var(--primary)', color: 'var(--primary-foreground)' }}
+                                      className="rounded-full border border-gray-300 bg-white px-4 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                                   >
-                                    Send
+                                    {label}
                                   </button>
-                                  <button
-                                    disabled={feedbackSubmitting}
-                                    onClick={() => setFeedbackForMessageId(null)}
-                                    className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
+                                ))}
                               </div>
-                            )}
+                                <div className="flex items-center gap-2">
+                                  <input 
+                                    id={`note-${m.id}`} 
+                                    className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all" 
+                                    placeholder="Optional note (max 120 chars)" 
+                                    maxLength={120} 
+                                  />
+                                <button
+                                  disabled={feedbackSubmitting}
+                                  onClick={async () => {
+                                    const inputEl = document.getElementById(`note-${m.id}`) as HTMLInputElement | null;
+                                    const note = inputEl?.value || '';
+                                    if (!user || !currentConversationId) return;
+                                    try {
+                                      setFeedbackSubmitting(true);
+                                      await fetch('/api/feedback', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ uid: user.uid, conversationId: currentConversationId, messageId: m.id, type: 'down', reason: 'More...', note })
+                                      });
+                                    } catch (e) {
+                                      // Silent fail for feedback
+                                    } finally {
+                                      setFeedbackSubmitting(false);
+                                      setFeedbackForMessageId(null);
+                                    }
+                                  }}
+                                    className="rounded-lg px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:shadow-md transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                                  style={{ background: 'var(--primary)', color: 'var(--primary-foreground)' }}
+                                >
+                                  Send
+                                </button>
+                                <button
+                                  disabled={feedbackSubmitting}
+                                  onClick={() => setFeedbackForMessageId(null)}
+                                    className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    ) : (
+                    </div>
+                       ) : (
                       // Premium User message
-                      <div className="group relative">
+                        <div className="group relative">
                         <div className="rounded-2xl bg-gray-100 border border-gray-200 p-5 sm:p-6 lg:p-7 shadow-sm hover:shadow-md transition-all duration-200">
                             <div className="mb-3 flex items-center gap-3">
                               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-300 shadow-sm">
@@ -2695,12 +2696,12 @@ function VerifyPage() {
                             )}
                           </div>
                         </div>
-                    )}
+                       )}
                   </div>
                 </div>
-              ))
-            )}
-          
+                ))
+          )}
+
           {/* Live analysis timeline */}
           {timeline.length > 0 && (
             <div className="flex w-full justify-center">
@@ -2718,7 +2719,7 @@ function VerifyPage() {
                   <div className="mb-4 flex items-center gap-3">
                     <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 shadow-sm animate-pulse">
                       <img src="/Images/Fakeverifier-official-logo.png" alt="FakeVerifier" className="h-5 w-5 object-contain" />
-                    </div>
+                  </div>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-semibold text-gray-900">FakeVerifier</span>
                       <CheckCircle2 className="h-4 w-4" style={{ color: 'var(--primary)' }} />
@@ -2729,32 +2730,32 @@ function VerifyPage() {
                     <TextShimmer className='font-mono text-sm [--base-color:var(--primary)]'>
                       Analyzing your input...
                     </TextShimmer>
+                    </div>
                   </div>
                 </div>
-              </div>
             </div>
           )}
         </div>
         
-        {/* Composer */}
-        <div className="px-6 py-5">
+            {/* Composer */}
+            <div className="px-6 py-5">
           {error && (
-            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">{error}</div>
-          )}
-          
-          <div className="flex justify-center">
-            <div className="w-full max-w-3xl border-t border-gray-200 pt-5">
-              <AI_Prompt 
-                onSend={onVerify}
-                placeholder="What's in your mind?..."
-                className="w-full"
-              />
-            </div>
+                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">{error}</div>
+              )}
+
+              <div className="flex justify-center">
+                <div className="w-full max-w-3xl border-t border-gray-200 pt-5">
+                  <AI_Prompt 
+                    onSend={onVerify}
+                    placeholder="What's in your mind?..."
+                    className="w-full"
+                  />
           </div>
         </div>
-      </main>
       </div>
-    </div>
+          </main>
+        </div>
+      </div>
 
       {/* Share Modal */}
       {shareModalOpen && (

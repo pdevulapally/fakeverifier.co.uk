@@ -167,37 +167,6 @@ ${evidenceSection}${sourcesSection}${followupSection}`.trim();
 export async function POST(req: NextRequest) {
   try {
     const { uid, input, context, model, imageBase64Array, regenerate } = await req.json();
-    // Quota: charge 1 token per verification
-    try {
-      if (uid) await ensureQuota(uid, 1);
-    } catch (q: any) {
-      // Fetch remaining counters for UI hints
-      let remaining = { daily: 0, monthly: 0, plan: 'free' as string };
-      try {
-        if (uid && db) {
-          const snap = await db.collection('tokenUsage').doc(uid).get();
-          const u = snap.data() as any;
-          const plan = (u?.plan || 'free') as 'free' | 'pro' | 'enterprise';
-          const planTotals = {
-            free: { daily: 10, monthly: 50 },
-            pro: { daily: 50, monthly: 500 },
-            enterprise: { daily: 500, monthly: 5000 }
-          };
-          const totals = planTotals[plan] || planTotals.free;
-          const dailyUsed = u?.dailyUsed ?? 0;
-          const monthlyUsed = u?.used ?? 0;
-          remaining = { 
-            daily: Math.max(0, totals.daily - dailyUsed), 
-            monthly: Math.max(0, totals.monthly - monthlyUsed), 
-            plan: plan 
-          };
-        }
-      } catch {}
-      return new Response(
-        JSON.stringify({ error: 'quota', message: 'Token quota exceeded', remaining }),
-        { status: 402, headers: { 'Content-Type': 'application/json' } }
-      );
-    }
 
     if (!input?.raw) {
       return new Response(JSON.stringify({ error: 'Missing input text' }), {
@@ -432,6 +401,47 @@ export async function POST(req: NextRequest) {
           cost: {},
         };
 
+          // Deduct credits for logged-in users based on OpenAI Agent Builder usage
+          // Estimate: OpenAI Agent Builder typically uses ~2000-5000 tokens per verification
+          // Convert to credits: 1 credit per 1000 tokens (minimum 2 credits for agent builder)
+          if (uid) {
+            // Estimate tokens based on input length and typical agent usage
+            const inputTokens = Math.ceil((input?.raw?.length || 0) / 4); // Rough estimate: 4 chars per token
+            const estimatedTotalTokens = inputTokens + 2000; // Add estimated output tokens
+            const creditsToDeduct = Math.max(2, Math.ceil(estimatedTotalTokens / 1000));
+            
+            try {
+              await ensureQuota(uid, creditsToDeduct);
+            } catch (q: any) {
+              // Fetch remaining counters for UI hints
+              let remaining = { daily: 0, monthly: 0, plan: 'free' as string };
+              try {
+                if (uid && db) {
+                  const snap = await db.collection('tokenUsage').doc(uid).get();
+                  const u = snap.data() as any;
+                  const plan = (u?.plan || 'free') as 'free' | 'pro' | 'enterprise';
+                  const planTotals = {
+                    free: { daily: 10, monthly: 50 },
+                    pro: { daily: 50, monthly: 500 },
+                    enterprise: { daily: 500, monthly: 5000 }
+                  };
+                  const totals = planTotals[plan] || planTotals.free;
+                  const dailyUsed = u?.dailyUsed ?? 0;
+                  const monthlyUsed = u?.used ?? 0;
+                  remaining = { 
+                    daily: Math.max(0, totals.daily - dailyUsed), 
+                    monthly: Math.max(0, totals.monthly - monthlyUsed), 
+                    plan: plan 
+                  };
+                }
+              } catch {}
+              return new Response(
+                JSON.stringify({ error: 'quota', message: 'Token quota exceeded', remaining }),
+                { status: 402, headers: { 'Content-Type': 'application/json' } }
+              );
+            }
+          }
+
           openAISucceeded = true;
           return new Response(JSON.stringify(result), {
             status: 200,
@@ -453,6 +463,43 @@ export async function POST(req: NextRequest) {
             modelUsed: { vendor: 'openai', name: 'agent-builder' },
             cost: {},
           };
+
+          // Deduct credits for logged-in users (same logic as fact-checking mode)
+          if (uid) {
+            const inputTokens = Math.ceil((input?.raw?.length || 0) / 4);
+            const estimatedTotalTokens = inputTokens + 2000;
+            const creditsToDeduct = Math.max(2, Math.ceil(estimatedTotalTokens / 1000));
+            
+            try {
+              await ensureQuota(uid, creditsToDeduct);
+            } catch (q: any) {
+              let remaining = { daily: 0, monthly: 0, plan: 'free' as string };
+              try {
+                if (uid && db) {
+                  const snap = await db.collection('tokenUsage').doc(uid).get();
+                  const u = snap.data() as any;
+                  const plan = (u?.plan || 'free') as 'free' | 'pro' | 'enterprise';
+                  const planTotals = {
+                    free: { daily: 10, monthly: 50 },
+                    pro: { daily: 50, monthly: 500 },
+                    enterprise: { daily: 500, monthly: 5000 }
+                  };
+                  const totals = planTotals[plan] || planTotals.free;
+                  const dailyUsed = u?.dailyUsed ?? 0;
+                  const monthlyUsed = u?.used ?? 0;
+                  remaining = { 
+                    daily: Math.max(0, totals.daily - dailyUsed), 
+                    monthly: Math.max(0, totals.monthly - monthlyUsed), 
+                    plan: plan 
+                  };
+                }
+              } catch {}
+              return new Response(
+                JSON.stringify({ error: 'quota', message: 'Token quota exceeded', remaining }),
+                { status: 402, headers: { 'Content-Type': 'application/json' } }
+              );
+            }
+          }
 
           openAISucceeded = true;
           return new Response(JSON.stringify(result), {

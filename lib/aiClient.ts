@@ -34,7 +34,8 @@ export async function callFakeVerifierModel(text: string): Promise<VerdictRespon
 }
 
 // OpenRouter API call with free models
-export async function callOpenRouterChat(messages: any[], model: string): Promise<string> {
+// Returns both content and cost information
+export async function callOpenRouterChat(messages: any[], model: string): Promise<{ content: string; cost?: number; usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } }> {
   const url = 'https://openrouter.ai/api/v1/chat/completions';
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -66,16 +67,48 @@ export async function callOpenRouterChat(messages: any[], model: string): Promis
     }
     const content = data?.choices?.[0]?.message?.content;
     if (!content) throw new Error('Empty response from OpenRouter');
-    return String(content);
+    
+    // Extract usage and cost information
+    const usage = data?.usage || {};
+    const cost = data?.cost || (usage?.total_tokens ? calculateOpenRouterCost(model, usage) : undefined);
+    
+    return {
+      content: String(content),
+      cost,
+      usage: {
+        prompt_tokens: usage?.prompt_tokens,
+        completion_tokens: usage?.completion_tokens,
+        total_tokens: usage?.total_tokens
+      }
+    };
   } catch (e) {
     logNetworkError(e, 'OpenRouter Chat', url);
     throw e;
   }
 }
 
+// Calculate cost based on OpenRouter pricing (approximate)
+// For free models, cost is 0. For paid models, we estimate based on tokens
+function calculateOpenRouterCost(model: string, usage: { prompt_tokens?: number; completion_tokens?: number }): number {
+  // Free models have no cost
+  if (model.includes(':free') || model.includes('meta-llama/llama-3.3-70b-instruct:free') || model.includes('openai/gpt-oss-20b:free')) {
+    return 0;
+  }
+  
+  // For paid models, estimate cost (this is approximate - adjust based on actual OpenRouter pricing)
+  // Default pricing: ~$0.0001 per 1K tokens for input, ~$0.0003 per 1K tokens for output
+  const promptTokens = usage.prompt_tokens || 0;
+  const completionTokens = usage.completion_tokens || 0;
+  const inputCost = (promptTokens / 1000) * 0.0001;
+  const outputCost = (completionTokens / 1000) * 0.0003;
+  
+  return inputCost + outputCost;
+}
+
 // Llama chat via OpenRouter only (Hugging Face removed)
 // Accepts optional modelId parameter to route to specific OpenRouter model
-export async function callLlamaChat(messages: any[], modelId?: string): Promise<string> {
+// Returns both content and cost information
+export async function callLlamaChat(messages: any[], modelId?: string): Promise<{ content: string; cost?: number; usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } }> {
   // Map model IDs to their actual OpenRouter API model names
   const modelMap: Record<string, string> = {
     'llama-3.3-70b-or': 'meta-llama/llama-3.3-70b-instruct:free',
