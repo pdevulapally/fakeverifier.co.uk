@@ -79,7 +79,7 @@ export default function ContactPage() {
                 </div>
                 <div>
                   <h3 className="text-xl font-semibold text-gray-900 mb-2">Email Support</h3>
-                  <p className="text-gray-600 text-lg">support@fakeverifier.com</p>
+                  <p className="text-gray-600 text-lg">PreethamDevulapally@gmail.com</p>
                   <p className="text-sm text-gray-500 mt-1">We'll respond within 24 hours</p>
                 </div>
               </div>
