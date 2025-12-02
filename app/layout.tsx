@@ -3,7 +3,6 @@
 import './globals.css';
 import CardNav from '@/components/CardNav';
 import { Footer as UiFooter } from '@/components/ui/footer-section';
-import CookieBanner from '@/components/CookieBanner';
 import '@/components/CardNav.css';
 import { usePathname } from 'next/navigation';
 import { AuthProvider } from '@/contexts/AuthContext';
@@ -16,8 +15,8 @@ const items = [
     textColor: 'var(--primary-foreground)',
     links: [
       { label: 'Verify', ariaLabel: 'Open verification tool', href: '/verify' },
-      { label: 'How it works', ariaLabel: 'How FakeVerifier works', href: '/how-it-works' },
-      { label: 'Plans', ariaLabel: 'View pricing plans', href: '/pricing' },
+      { label: 'How it works', ariaLabel: 'How FakeVerifier works', href: '/#how-it-works' },
+      { label: 'Plans', ariaLabel: 'View pricing plans', href: '/#plans' },
     ],
   },
   {
@@ -35,7 +34,7 @@ const items = [
     bgColor: 'var(--accent)',
     textColor: 'var(--accent-foreground)',
     links: [
-      { label: 'About', ariaLabel: 'About FakeVerifier', href: '/about' },
+      { label: 'About', ariaLabel: 'About FakeVerifier', href: '/#about' },
       { label: 'Contact', ariaLabel: 'Contact us', href: '/contact' },
     ],
   },
@@ -47,6 +46,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <html lang="en">
+      <head>
+        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+        <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+        <link rel="manifest" href="/site.webmanifest" />
+      </head>
       <body>
         <AuthProvider>
           <ToastProvider>
@@ -55,7 +60,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             )}
             {children}
             {!isVerifyPage && <UiFooter />}
-            <CookieBanner />
           </ToastProvider>
         </AuthProvider>
       </body>
