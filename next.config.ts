@@ -1,16 +1,14 @@
 import type { NextConfig } from 'next';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+import path from 'path';
 
 const nextConfig: NextConfig = {
   experimental: {
     serverActions: { bodySizeLimit: '2mb' }
   },
+  // Turbopack config (Next.js 16+ uses Turbopack by default)
+  // Set root to current directory to avoid lockfile detection issues
   turbopack: {
-    root: __dirname, // ensure correct workspace root for module resolution
+    root: path.resolve(process.cwd()),
   },
   webpack: (config, { isServer }) => {
     // Exclude problematic ZIP files from bundling
