@@ -277,20 +277,181 @@ function sanitizeReplyWithEvidence(text: string, evidence: EvidenceItem[]) {
   return sanitized.trim();
 }
 
-async function getUserMemories(uid: string): Promise<string[]> {
+async function getUserMemories(uid: string, conversationContext?: string): Promise<string[]> {
   try {
     // Don't fetch memories for anonymous users
     if (!db || !uid || uid === 'demo' || uid === '') return [];
+    
+    // Use context-aware retrieval if context is provided
+    if (conversationContext) {
+      return await getRelevantMemories(uid, conversationContext, 10);
+    }
+    
+    // Fallback to simple retrieval - get all and sort in memory (Firebase doesn't support multiple orderBy)
     const snap = await db
       .collection('users')
       .doc(uid)
       .collection('memories')
-      .orderBy('createdAt', 'desc')
-      .limit(10)
+      .where('isActive', '==', true)
+      .limit(50)
       .get();
-    return snap.docs.map(d => String((d.data() as any)?.content || '')).filter(Boolean);
+    
+    const memories = snap.docs.map(d => ({
+      id: d.id,
+      ...(d.data() as any)
+    }));
+    
+    // Sort by importance score and recency
+    memories.sort((a, b) => {
+      const scoreA = (Number(a.importanceScore || 0.5) * 0.6) + 
+                    (Number(a.usageCount || 0) / 10 * 0.4);
+      const scoreB = (Number(b.importanceScore || 0.5) * 0.6) + 
+                    (Number(b.usageCount || 0) / 10 * 0.4);
+      return scoreB - scoreA;
+    });
+    
+    return memories
+      .slice(0, 10)
+      .map(m => String(m.content || ''))
+      .filter(Boolean);
   } catch {
     return [];
+  }
+}
+
+// Context-aware memory retrieval with relevance scoring
+async function getRelevantMemories(
+  uid: string,
+  conversationContext: string,
+  limit: number = 10
+): Promise<string[]> {
+  try {
+    if (!db || !uid || uid === 'demo' || uid === '') return [];
+    
+    // Get all active memories
+    const snap = await db
+      .collection('users')
+      .doc(uid)
+      .collection('memories')
+      .where('isActive', '==', true)
+      .limit(100) // Get more to score and filter
+      .get();
+    
+    const memories = snap.docs.map(d => ({
+      id: d.id,
+      ...(d.data() as any)
+    }));
+    
+    if (memories.length === 0) return [];
+    
+    // Extract keywords from conversation context
+    const contextKeywords = extractKeywords(conversationContext);
+    
+    // Score each memory based on relevance
+    const scoredMemories = memories.map(mem => {
+      const relevanceScore = calculateRelevanceScore(mem, contextKeywords, conversationContext);
+      return { ...mem, relevanceScore };
+    });
+    
+    // Sort by relevance score (descending)
+    scoredMemories.sort((a, b) => b.relevanceScore - a.relevanceScore);
+    
+    // Return top N memories
+    return scoredMemories
+      .slice(0, limit)
+      .map(m => {
+        // Track usage
+        trackMemoryUsage(uid, m.id).catch(() => {}); // Fire and forget
+        return String(m.content || '');
+      })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+// Extract keywords from text
+function extractKeywords(text: string): Set<string> {
+  const words = text
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(w => w.length > 3) // Filter out short words
+    .filter(w => !['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'her', 'was', 'one', 'our', 'out', 'day', 'get', 'has', 'him', 'his', 'how', 'its', 'may', 'new', 'now', 'old', 'see', 'two', 'way', 'who', 'boy', 'did', 'its', 'let', 'put', 'say', 'she', 'too', 'use'].includes(w));
+  
+  return new Set(words);
+}
+
+// Calculate relevance score for a memory
+function calculateRelevanceScore(
+  memory: any,
+  contextKeywords: Set<string>,
+  conversationContext: string
+): number {
+  let score = 0;
+  
+  // Base importance score (40%)
+  const importanceScore = Number(memory.importanceScore || 0.5);
+  score += importanceScore * 0.4;
+  
+  // Recency score (30%)
+  const createdAt = memory.createdAt?.toDate ? memory.createdAt.toDate() : new Date(memory.createdAt || Date.now());
+  const daysSinceCreation = (Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24);
+  const recencyScore = Math.max(0, 1 - (daysSinceCreation / 90)); // Decay over 90 days
+  score += recencyScore * 0.3;
+  
+  // Usage score (30%)
+  const usageCount = Number(memory.usageCount || 0);
+  const usageScore = Math.min(1, usageCount / 10); // Normalize to 0-1 (10 uses = max)
+  score += usageScore * 0.3;
+  
+  // Semantic similarity bonus (up to +0.2)
+  const memoryText = String(memory.content || '').toLowerCase();
+  const memoryKeywords = extractKeywords(memoryText);
+  
+  // Calculate keyword overlap
+  let overlap = 0;
+  let totalKeywords = 0;
+  for (const keyword of contextKeywords) {
+    totalKeywords++;
+    if (memoryKeywords.has(keyword) || memoryText.includes(keyword)) {
+      overlap++;
+    }
+  }
+  
+  const similarityBonus = totalKeywords > 0 ? (overlap / totalKeywords) * 0.2 : 0;
+  score += similarityBonus;
+  
+  // Topic/tag matching bonus
+  const memoryTopics = Array.isArray(memory.topics) ? memory.topics : [];
+  const memoryTags = Array.isArray(memory.tags) ? memory.tags : [];
+  const allMemoryTerms = [...memoryTopics, ...memoryTags].map(t => t.toLowerCase());
+  
+  for (const keyword of contextKeywords) {
+    if (allMemoryTerms.some(term => term.includes(keyword) || keyword.includes(term))) {
+      score += 0.05; // Small bonus for topic/tag matches
+      break;
+    }
+  }
+  
+  return Math.min(1, score); // Cap at 1.0
+}
+
+// Track memory usage (fire and forget)
+async function trackMemoryUsage(uid: string, memoryId: string): Promise<void> {
+  try {
+    if (!db || !uid || !memoryId) return;
+    const ref = db.collection('users').doc(uid).collection('memories').doc(memoryId);
+    const mem = await ref.get();
+    if (mem.exists) {
+      const data = mem.data();
+      const usageCount = Number(data?.usageCount || 0) + 1;
+      await ref.update({
+        usageCount,
+        lastUsedAt: new Date(),
+      });
+    }
+  } catch {
+    // Silent fail for usage tracking
   }
 }
 
@@ -387,7 +548,9 @@ export async function POST(req: NextRequest) {
     const needsEvidence = needsRealTimeInfo(text, Array.isArray(history) ? history : []);
     const evidence = needsEvidence ? await aggregateEvidence(text) : [];
     const pref = await getUserPreferenceHint((userId || '').toString());
-    const userMems = await getUserMemories((userId || '').toString());
+    // Use context-aware memory retrieval
+    const conversationContext = `${text} ${Array.isArray(history) ? history.slice(-3).map((h: any) => h.content || '').join(' ') : ''}`;
+    const userMems = await getUserMemories((userId || '').toString(), conversationContext);
     const memText = userMems.length ? `\n\nKnown user profile and preferences:\n${userMems.map(m => `- ${m}`).join('\n')}` : '';
     const msgs = buildProMessages(text + memText, evidence, Array.isArray(history) ? history : [], pref);
     // Pass the model ID to route to correct provider (modelId already declared above)

@@ -33,7 +33,23 @@ export async function POST(req: NextRequest) {
     if (!content) return new Response(JSON.stringify({ error: 'Missing content' }), { status: 400 });
     const ref = db.collection('users').doc(uid).collection('memories').doc();
     const now = new Date();
-    await ref.set({ content, type, tags, isActive: true, createdAt: now, updatedAt: now });
+    const topics = Array.isArray(body?.topics) ? body.topics : [];
+    const importanceScore = Number.isFinite(body?.importanceScore) ? Math.max(0, Math.min(1, Number(body.importanceScore))) : 0.5;
+    
+    await ref.set({
+      content,
+      type,
+      tags,
+      topics,
+      importanceScore,
+      usageCount: 0,
+      lastUsedAt: null,
+      relatedMemories: [],
+      confidence: 0.8,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    });
     return new Response(JSON.stringify({ id: ref.id }), { status: 200 });
   } catch (e: any) {
     return new Response(JSON.stringify({ error: e?.message || 'Internal error' }), { status: 500 });
@@ -54,8 +70,16 @@ export async function PUT(req: NextRequest) {
     const content = (body?.content || '').toString().trim();
     const type = (body?.type || 'general').toString();
     const tags = Array.isArray(body?.tags) ? body.tags : [];
+    const topics = Array.isArray(body?.topics) ? body.topics : [];
+    const importanceScore = Number.isFinite(body?.importanceScore) ? Math.max(0, Math.min(1, Number(body.importanceScore))) : undefined;
     const ref = db.collection('users').doc(uid).collection('memories').doc(id);
-    await ref.update({ content, type, tags, updatedAt: new Date() });
+    
+    const updateData: any = { content, type, tags, topics, updatedAt: new Date() };
+    if (importanceScore !== undefined) {
+      updateData.importanceScore = importanceScore;
+    }
+    
+    await ref.update(updateData);
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   } catch (e: any) {
     return new Response(JSON.stringify({ error: e?.message || 'Internal error' }), { status: 500 });

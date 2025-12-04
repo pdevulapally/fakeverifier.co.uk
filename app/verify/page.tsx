@@ -35,8 +35,10 @@ import { AI_Prompt } from '@/components/ui/animated-ai-input';
 import { TimelineFeed, type TimelineEvent } from '@/components/TimelineFeed';
 import ClassicLoader from '@/components/ui/classic-loader';
 import { TextShimmer } from '@/components/ui/text-shimmer';
+import AILoadingState from '@/components/ui/ai-loading-state';
 import { MemoryManager } from '@/components/MemoryManager';
 import { MemoryNotification } from '@/components/MemoryNotification';
+import { SettingsModal } from '@/components/SettingsModal';
 import { useAuth } from '@/contexts/AuthContext';
 
 function TokenCounters({ uid, refreshKey }: { uid?: string | null; refreshKey?: number }) {
@@ -68,10 +70,11 @@ function TokenCounters({ uid, refreshKey }: { uid?: string | null; refreshKey?: 
     enterprise: { daily: Number.MAX_SAFE_INTEGER, monthly: Number.MAX_SAFE_INTEGER, color: '#8B5CF6' },
   };
   const totals = planTotals[data.plan] || planTotals.free;
-  const dailyUsed = Math.max(0, totals.daily - (data.daily || 0));
-  const monthlyUsed = Math.max(0, totals.monthly - (data.monthly || 0));
-  const dailyPct = Math.min(100, Math.round((dailyUsed / Math.max(1, totals.daily)) * 100));
-  const monthlyPct = Math.min(100, Math.round((monthlyUsed / Math.max(1, totals.monthly)) * 100));
+  const isUnlimited = totals.daily === Number.MAX_SAFE_INTEGER || totals.monthly === Number.MAX_SAFE_INTEGER;
+  const dailyUsed = isUnlimited ? 0 : Math.max(0, totals.daily - (data.daily || 0));
+  const monthlyUsed = isUnlimited ? 0 : Math.max(0, totals.monthly - (data.monthly || 0));
+  const dailyPct = isUnlimited ? 100 : Math.min(100, Math.round((dailyUsed / Math.max(1, totals.daily)) * 100));
+  const monthlyPct = isUnlimited ? 100 : Math.min(100, Math.round((monthlyUsed / Math.max(1, totals.monthly)) * 100));
 
   return (
     <div className="mt-2 rounded-lg border p-3" style={{ background: 'var(--card)', borderColor: 'var(--border)' }}>
@@ -82,7 +85,7 @@ function TokenCounters({ uid, refreshKey }: { uid?: string | null; refreshKey?: 
       <div className="mb-2">
         <div className="flex justify-between text-[11px] mb-1" style={{ color: 'var(--muted-foreground)' }}>
           <span>Daily</span>
-          <span>{totals.daily - dailyUsed}/{totals.daily}</span>
+          <span>{isUnlimited ? 'Unlimited' : `${totals.daily - dailyUsed}/${totals.daily}`}</span>
         </div>
         <div className="h-2 w-full overflow-hidden rounded-full" style={{ background: 'var(--muted)' }}>
           <div className="h-2" style={{ width: `${dailyPct}%`, background: totals.color, transition: 'width 300ms ease' }} />
@@ -91,7 +94,7 @@ function TokenCounters({ uid, refreshKey }: { uid?: string | null; refreshKey?: 
       <div>
         <div className="flex justify-between text-[11px] mb-1" style={{ color: 'var(--muted-foreground)' }}>
           <span>Monthly</span>
-          <span>{totals.monthly - monthlyUsed}/{totals.monthly}</span>
+          <span>{isUnlimited ? 'Unlimited' : `${totals.monthly - monthlyUsed}/${totals.monthly}`}</span>
         </div>
         <div className="h-2 w-full overflow-hidden rounded-full" style={{ background: 'var(--muted)' }}>
           <div className="h-2" style={{ width: `${monthlyPct}%`, background: totals.color, transition: 'width 300ms ease' }} />
@@ -345,7 +348,8 @@ function FurtherReading({ evidence }: { evidence: EvidenceItem[] }) {
   return (
     <div className="mt-6 pt-6 border-t border-gray-200">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">Further reading</h3>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Responsive grid: single column on mobile, two on small screens, three on large */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         {articlesToShow.map((item, index) => {
           const sourceName = getSourceName(item);
           const daysAgo = getDaysAgo(index);
@@ -356,7 +360,7 @@ function FurtherReading({ evidence }: { evidence: EvidenceItem[] }) {
               href={item.link}
               target="_blank"
               rel="noopener noreferrer"
-              className="block rounded-lg border border-gray-200 bg-white hover:shadow-md transition-shadow overflow-hidden"
+              className="flex flex-col rounded-lg border border-gray-200 bg-white hover:shadow-md transition-shadow overflow-hidden h-full min-w-0"
             >
               {/* Image thumbnail - use actual image URL if available */}
               {item.image ? (
@@ -384,7 +388,7 @@ function FurtherReading({ evidence }: { evidence: EvidenceItem[] }) {
                   <Link2 className="h-8 w-8 text-gray-400" />
                 </div>
               )}
-              <div className="p-4">
+              <div className="p-3 sm:p-4 flex-1 flex flex-col">
                 {/* Source name with logo placeholder */}
                 <div className="flex items-center gap-2 mb-2">
                   <div className="w-5 h-5 rounded-full bg-gray-300 flex items-center justify-center">
@@ -395,11 +399,11 @@ function FurtherReading({ evidence }: { evidence: EvidenceItem[] }) {
                   <span className="text-xs font-medium text-gray-600">{sourceName}</span>
                 </div>
                 {/* Headline */}
-                <h4 className="text-sm font-semibold text-gray-900 mb-2 line-clamp-2">
+                <h4 className="text-sm font-semibold text-gray-900 mb-2 line-clamp-2 sm:line-clamp-3">
                   {item.title || item.snippet || 'Read more'}
                 </h4>
                 {/* Timestamp */}
-                <p className="text-xs text-gray-500">{daysAgo} days ago</p>
+                <p className="mt-auto text-xs text-gray-500">{daysAgo} days ago</p>
               </div>
             </a>
           );
@@ -447,6 +451,7 @@ function VerifyPage() {
   const [copySuccess, setCopySuccess] = useState(false);
   const [memoryNotifications, setMemoryNotifications] = useState<any[]>([]);
   const [showMemoryNotification, setShowMemoryNotification] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [isPublic, setIsPublic] = useState(false);
   const [showPrivacyWarning, setShowPrivacyWarning] = useState(false);
   const [publicLink, setPublicLink] = useState<string | null>(null);
@@ -483,8 +488,18 @@ function VerifyPage() {
     }
   };
 
+  const [processingMemory, setProcessingMemory] = useState<string | null>(null);
+  
   const processAutoMemories = async (userMessage: string, aiResponse: string) => {
     if (!user?.uid) return;
+    
+    // Create a unique key for this message to prevent duplicate processing
+    const messageKey = `${userMessage.slice(0, 50)}_${aiResponse.slice(0, 50)}`;
+    
+    // Skip if already processing this message
+    if (processingMemory === messageKey) return;
+    
+    setProcessingMemory(messageKey);
     
     try {
       const response = await fetch('/api/memories/auto', {
@@ -500,9 +515,17 @@ function VerifyPage() {
 
       if (response.ok) {
         const data = await response.json();
-        if (data.createdMemories.length > 0 || data.updatedMemories.length > 0) {
-          // Show notification
-          setMemoryNotifications([...data.createdMemories, ...data.updatedMemories]);
+        const created = Array.isArray(data.createdMemories) ? data.createdMemories : [];
+        const updated = Array.isArray(data.updatedMemories) ? data.updatedMemories : [];
+        
+        if (created.length > 0 || updated.length > 0) {
+          // Show notification with proper format
+          const notifications = [
+            ...created.map((m: any) => ({ ...m, action: 'created' })),
+            ...updated.map((m: any) => ({ ...m, action: 'updated' }))
+          ];
+          
+          setMemoryNotifications(notifications);
           setShowMemoryNotification(true);
           
           // Reload memories
@@ -511,6 +534,9 @@ function VerifyPage() {
       }
     } catch (error) {
       console.error('Failed to process auto memories:', error);
+    } finally {
+      // Clear processing flag after a delay to allow for retries if needed
+      setTimeout(() => setProcessingMemory(null), 2000);
     }
   };
 
@@ -682,19 +708,113 @@ function VerifyPage() {
     return { processed, citationMap };
   }
 
-  // Minimal markdown renderer for assistant messages (links, bold, lists, newlines, citations)
+  // Helpers for simple markdown table detection and rendering
+  function isTableRow(line: string): boolean {
+    const trimmed = line.trim();
+    return trimmed.startsWith('|') && trimmed.endsWith('|') && trimmed.split('|').length > 2;
+  }
+
+  function isTableSeparator(line: string): boolean {
+    const trimmed = line.trim();
+    // Matches | --- |:---:| ---: | style separators
+    return /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(trimmed);
+  }
+
+  function renderTableCellContent(text: string): string {
+    let cell = text.trim();
+    // escape basic HTML
+    cell = cell.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    // bold **text**
+    cell = cell.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    // links [text](url)
+    cell = cell.replace(
+      /\[([^\]]+)\]\((https?:[^\s)]+)\)/g,
+      '<a href="$2" target="_blank" rel="noopener noreferrer" class="underline" style="color: var(--primary);">$1</a>'
+    );
+    return cell;
+  }
+
+  function renderMarkdownTable(blockLines: string[]): string {
+    if (blockLines.length < 2) return blockLines.join('<br/>');
+    const headerCells = blockLines[0]
+      .trim()
+      .replace(/^\|/, '')
+      .replace(/\|$/, '')
+      .split('|')
+      .map((c) => renderTableCellContent(c));
+
+    const bodyLines = blockLines.slice(2).filter(isTableRow);
+    const bodyRows = bodyLines.map((row) =>
+      row
+        .trim()
+        .replace(/^\|/, '')
+        .replace(/\|$/, '')
+        .split('|')
+        .map((c) => renderTableCellContent(c))
+    );
+
+    let tableHtml = `<div class="my-3 -mx-2 sm:mx-0 overflow-x-auto"><table class="min-w-full text-xs sm:text-sm border-collapse">`;
+    tableHtml += `<thead class="bg-gray-50"><tr>`;
+    headerCells.forEach((cell) => {
+      tableHtml += `<th class="px-3 py-2 text-left font-semibold text-gray-700 border-b border-gray-200 whitespace-nowrap">${cell}</th>`;
+    });
+    tableHtml += `</tr></thead><tbody class="align-top">`;
+    bodyRows.forEach((cells) => {
+      tableHtml += `<tr>`;
+      cells.forEach((cell) => {
+        tableHtml += `<td class="px-3 py-2 border-b border-gray-100 text-gray-800 whitespace-nowrap">${cell}</td>`;
+      });
+      tableHtml += `</tr>`;
+    });
+    tableHtml += `</tbody></table></div>`;
+    return tableHtml;
+  }
+
+  function extractTablesFromMarkdown(md: string): { text: string; tables: string[] } {
+    const lines = md.split(/\r?\n/);
+    const outLines: string[] = [];
+    const tables: string[] = [];
+
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      const next = lines[i + 1];
+      if (isTableRow(line) && next !== undefined && isTableSeparator(next)) {
+        const block: string[] = [line, next];
+        let j = i + 2;
+        while (j < lines.length && isTableRow(lines[j])) {
+          block.push(lines[j]);
+          j++;
+        }
+        const marker = `__TABLE_BLOCK_${tables.length}__`;
+        tables.push(renderMarkdownTable(block));
+        outLines.push(marker);
+        i = j;
+      } else {
+        outLines.push(line);
+        i++;
+      }
+    }
+
+    return { text: outLines.join('\n'), tables };
+  }
+
+  // Minimal markdown renderer for assistant messages (links, bold, lists, newlines, citations, basic tables)
   function mdToHtml(md: string, evidence?: EvidenceItem[]): string {
     if (!md) return '';
-    
+
     // Process citations first
-    const { processed, citationMap } = evidence ? processCitations(md, evidence) : { processed: md, citationMap: new Map() };
-    let html = processed;
-    
+    const { processed } = evidence ? processCitations(md, evidence) : { processed: md };
+
+    // Extract markdown tables into placeholders so we can style them separately
+    const { text: withoutTables, tables } = extractTablesFromMarkdown(processed);
+    let html = withoutTables;
+
     // escape basic HTML
     html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     // bold **text**
     html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    
+
     // Process citation placeholders [CITATION:index] -> render as citation
     html = html.replace(/\[CITATION:(\d+)\]/g, (match, indexStr) => {
       const index = parseInt(indexStr, 10);
@@ -704,12 +824,18 @@ function VerifyPage() {
       }
       return match;
     });
-    
+
     // Regular links [text](url) - only if not already processed as citations
-    html = html.replace(/\[([^\]]+)\]\((https?:[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="underline" style="color: var(--primary);" onmouseover="this.style.opacity=\'0.8\'" onmouseout="this.style.opacity=\'1\'">$1</a>');
+    html = html.replace(
+      /\[([^\]]+)\]\((https?:[^\s)]+)\)/g,
+      '<a href="$2" target="_blank" rel="noopener noreferrer" class="underline" style="color: var(--primary);" onmouseover="this.style.opacity=\'0.8\'" onmouseout="this.style.opacity=\'1\'">$1</a>'
+    );
     // angle links <url>
-    html = html.replace(/&lt;(https?:[^\s]+)&gt;/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="underline" style="color: var(--primary);" onmouseover="this.style.opacity=\'0.8\'" onmouseout="this.style.opacity=\'1\'">$1</a>');
-    
+    html = html.replace(
+      /&lt;(https?:[^\s]+)&gt;/g,
+      '<a href="$1" target="_blank" rel="noopener noreferrer" class="underline" style="color: var(--primary);" onmouseover="this.style.opacity=\'0.8\'" onmouseout="this.style.opacity=\'1\'">$1</a>'
+    );
+
     // numbered lists (1. 2. 3. etc.) and bullet lists (-)
     const lines = html.split(/\r?\n/);
     let inBulletList = false;
@@ -718,18 +844,36 @@ function VerifyPage() {
     for (const line of lines) {
       const bulletMatch = line.match(/^\s*-\s+(.*)/);
       const numberedMatch = line.match(/^\s*(\d+)\.\s+(.*)/);
-      
+
       if (bulletMatch) {
-        if (inNumberedList) { out.push('</ol>'); inNumberedList = false; }
-        if (!inBulletList) { out.push('<ul class="list-disc pl-6 my-2">'); inBulletList = true; }
+        if (inNumberedList) {
+          out.push('</ol>');
+          inNumberedList = false;
+        }
+        if (!inBulletList) {
+          out.push('<ul class="list-disc pl-6 my-2">');
+          inBulletList = true;
+        }
         out.push(`<li>${bulletMatch[1]}</li>`);
       } else if (numberedMatch) {
-        if (inBulletList) { out.push('</ul>'); inBulletList = false; }
-        if (!inNumberedList) { out.push('<ol class="list-decimal pl-6 my-2">'); inNumberedList = true; }
+        if (inBulletList) {
+          out.push('</ul>');
+          inBulletList = false;
+        }
+        if (!inNumberedList) {
+          out.push('<ol class="list-decimal pl-6 my-2">');
+          inNumberedList = true;
+        }
         out.push(`<li>${numberedMatch[2]}</li>`);
       } else {
-        if (inBulletList) { out.push('</ul>'); inBulletList = false; }
-        if (inNumberedList) { out.push('</ol>'); inNumberedList = false; }
+        if (inBulletList) {
+          out.push('</ul>');
+          inBulletList = false;
+        }
+        if (inNumberedList) {
+          out.push('</ol>');
+          inNumberedList = false;
+        }
         out.push(line);
       }
     }
@@ -737,6 +881,13 @@ function VerifyPage() {
     if (inNumberedList) out.push('</ol>');
     // join with <br/>
     html = out.join('\n').replace(/\n/g, '<br/>');
+
+    // Replace table placeholders with rendered HTML tables
+    tables.forEach((tableHtml, index) => {
+      const marker = `__TABLE_BLOCK_${index}__`;
+      html = html.replace(marker, tableHtml);
+    });
+
     return html;
   }
 
@@ -1839,7 +1990,7 @@ function VerifyPage() {
               <span className="text-sm text-gray-800">Memories</span>
             </button>
             <button 
-              onClick={() => { router.push('/settings'); }}
+              onClick={() => { setShowSettingsModal(true); }}
               className="mb-3 flex w-full items-center gap-3 rounded-full p-2 bg-white border border-gray-200 hover:bg-gray-50">
               <div className="grid h-8 w-8 place-items-center rounded-full bg-gray-100">
                 <Settings className="h-4 w-4 text-gray-800" />
@@ -1956,7 +2107,7 @@ function VerifyPage() {
         {/* Mobile Main Content */}
         <div className="flex flex-col h-[calc(100vh-60px)] overflow-hidden">
           {/* Messages */}
-          <div className="flex-1 space-y-6 overflow-y-auto px-4 py-6">
+          <div className="flex-1 overflow-y-auto">
             {messages.length === 0 ? (
               <div className="grid h-full place-items-center">
                 <div className="text-center max-w-full px-4">
@@ -2002,90 +2153,108 @@ function VerifyPage() {
               </div>
             ) : (
               messages.map((m, index) => (
-                <div key={m.id} className="flex w-full justify-center px-4">
-                  <div className="w-full max-w-4xl">
+                <div key={m.id} className="flex w-full justify-center px-3 sm:px-4 py-3 sm:py-4">
+                  <div className="w-full max-w-3xl flex gap-3 sm:gap-4">
                     {m.role === 'assistant' ? (
-                      <div className="group relative">
-                        <div className="rounded-2xl bg-white border border-gray-200 p-5 sm:p-6 shadow-sm hover:shadow-md transition-all duration-200">
-                          {/* Premium header with avatar */}
-                          <div className="mb-4 flex items-center gap-3">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 shadow-sm">
-                              <img src="/Images/Fakeverifier-official-logo.png" alt="FakeVerifier" className="h-5 w-5 object-contain" />
-                        </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-semibold text-gray-900">FakeVerifier</span>
-                              <CheckCircle2 className="h-4 w-4" style={{ color: 'var(--primary)' }} />
-                        </div>
-                        </div>
-
-                          {/* Message content */}
-                          <div className="mb-4">
+                      <div className="group flex gap-3 sm:gap-4 w-full">
+                        {/* Message content - plain text without container */}
+                        <div className="flex-1 min-w-0 pl-2 sm:pl-3">
+                          <div className="py-1">
                             <AssistantMessage 
                               message={m} 
                               isLastMessage={index === messages.length - 1} 
                               isStreaming={loading}
                             />
                           </div>
-                          
-                          {/* Premium action buttons */}
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                          {/* Action buttons */}
+                          <div className="flex items-center gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                             <button 
                               onClick={() => onFeedback(m.id, 'up')} 
-                              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+                              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
                             >
                               <ThumbsUp className="h-3.5 w-3.5" />
-                              <span>Helpful</span>
                             </button>
                             <button 
                               onClick={() => onFeedback(m.id, 'down')} 
-                              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+                              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
                             >
                               <ThumbsDown className="h-3.5 w-3.5" />
-                              <span>Not helpful</span>
                             </button>
-                            <div className="mx-1 h-4 w-px bg-gray-300" />
+                            <div className="mx-1 h-3 w-px bg-gray-300" />
                             <button 
                               onClick={() => onCopy(m.content)} 
-                              className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+                              className="rounded-md p-1.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
                               title="Copy"
                             >
-                              <Copy className="h-4 w-4" />
+                              <Copy className="h-3.5 w-3.5" />
                             </button>
                             {user && (
                               <button 
                                 onClick={() => onShare(m.content)} 
-                                className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+                                className="rounded-md p-1.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
                                 title="Share"
                               >
-                                <Share className="h-4 w-4" />
+                                <Share className="h-3.5 w-3.5" />
                               </button>
                             )}
                             <button 
                               onClick={onRegenerate} 
-                              className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+                              className="rounded-md p-1.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
                               title="Regenerate"
                             >
-                              <RotateCcw className="h-4 w-4" />
+                              <RotateCcw className="h-3.5 w-3.5" />
                             </button>
                           </div>
-
-                          {/* Premium Feedback tray on mobile */}
-                        {feedbackForMessageId === m.id && (
-                            <div className="mt-4 rounded-xl border border-gray-200 bg-gradient-to-br from-gray-50 to-white p-4 shadow-sm">
+                          {/* Feedback tray */}
+                          {feedbackForMessageId === m.id && (
+                            <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50/50 p-4 shadow-sm">
                               <div className="mb-3 text-sm font-semibold text-gray-900">Tell us more:</div>
                               <div className="flex flex-wrap gap-2 mb-4">
-                              {(dynamicReasons.length ? dynamicReasons : ['Not clear enough','Missing context','Not factual','Too verbose']).map((label) => (
+                                {(dynamicReasons.length ? dynamicReasons : ['Not clear enough','Missing context','Not factual','Too verbose']).map((label) => (
+                                  <button
+                                    key={label}
+                                    disabled={feedbackSubmitting}
+                                    onClick={async () => {
+                                      if (!user || !currentConversationId) return;
+                                      try {
+                                        setFeedbackSubmitting(true);
+                                        await fetch('/api/feedback', {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({ uid: user.uid, conversationId: currentConversationId, messageId: m.id, type: 'down', reason: label })
+                                        });
+                                      } catch (e) {
+                                        // Silent fail for feedback
+                                      } finally {
+                                        setFeedbackSubmitting(false);
+                                        setFeedbackForMessageId(null);
+                                      }
+                                    }}
+                                    className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                                  >
+                                    {label}
+                                  </button>
+                                ))}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <input 
+                                  id={`note-mobile-${m.id}`} 
+                                  className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all" 
+                                  placeholder="Optional note (max 120 chars)" 
+                                  maxLength={120} 
+                                />
                                 <button
-                                  key={label}
                                   disabled={feedbackSubmitting}
                                   onClick={async () => {
+                                    const inputEl = document.getElementById(`note-mobile-${m.id}`) as HTMLInputElement | null;
+                                    const note = inputEl?.value || '';
                                     if (!user || !currentConversationId) return;
                                     try {
                                       setFeedbackSubmitting(true);
                                       await fetch('/api/feedback', {
                                         method: 'POST',
                                         headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ uid: user.uid, conversationId: currentConversationId, messageId: m.id, type: 'down', reason: label })
+                                        body: JSON.stringify({ uid: user.uid, conversationId: currentConversationId, messageId: m.id, type: 'down', reason: 'More...', note })
                                       });
                                     } catch (e) {
                                       // Silent fail for feedback
@@ -2094,66 +2263,86 @@ function VerifyPage() {
                                       setFeedbackForMessageId(null);
                                     }
                                   }}
-                                    className="rounded-full border border-gray-300 bg-white px-4 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                                  className="rounded-lg px-3 py-2 text-sm font-medium text-white shadow-sm hover:shadow transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                                  style={{ background: 'var(--primary)', color: 'var(--primary-foreground)' }}
                                 >
-                                  {label}
+                                  Send
                                 </button>
-                              ))}
+                                <button
+                                  disabled={feedbackSubmitting}
+                                  onClick={() => setFeedbackForMessageId(null)}
+                                  className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
                             </div>
-                              <div className="flex items-center gap-2">
-                                <input 
-                                  id={`note-${m.id}`} 
-                                  className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all" 
-                                  placeholder="Optional note (max 120 chars)" 
-                                  maxLength={120} 
-                                />
-                              <button
-                                disabled={feedbackSubmitting}
-                                onClick={async () => {
-                                  const inputEl = document.getElementById(`note-${m.id}`) as HTMLInputElement | null;
-                                  const note = inputEl?.value || '';
-                                  if (!user || !currentConversationId) return;
-                                  try {
-                                    setFeedbackSubmitting(true);
-                                    await fetch('/api/feedback', {
-                                      method: 'POST',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({ uid: user.uid, conversationId: currentConversationId, messageId: m.id, type: 'down', reason: 'More...', note })
-                                    });
-                                  } catch (e) {
-                                    // Silent fail for feedback
-                                  } finally {
-                                    setFeedbackSubmitting(false);
-                                    setFeedbackForMessageId(null);
-                                  }
-                                }}
-                                  className="rounded-lg px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:shadow-md transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                                style={{ background: 'var(--primary)', color: 'var(--primary-foreground)' }}
-                              >
-                                Send
-                              </button>
-                              <button
-                                disabled={feedbackSubmitting}
-                                onClick={() => setFeedbackForMessageId(null)}
-                                  className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          </div>
-                        )}
+                          )}
                         </div>
                       </div>
                     ) : (
-                      <div className="group relative">
-                        <div className="rounded-2xl bg-gray-100 border border-gray-200 p-5 sm:p-6 shadow-sm hover:shadow-md transition-all duration-200">
-                          <div className="mb-3 flex items-center gap-3">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-300 shadow-sm">
-                              <span className="text-sm font-semibold text-gray-700">U</span>
-                            </div>
-                            <span className="text-sm font-semibold text-gray-900">You</span>
+                      <div className="group flex gap-3 sm:gap-4 w-full justify-end">
+                        {/* Message content on right */}
+                        <div className="flex-1 min-w-0 flex justify-end">
+                          <div className="max-w-[85%] sm:max-w-[80%]">
+                            {editingMessageId === m.id ? (
+                              // Edit mode - ChatGPT style
+                              <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+                                <textarea
+                                  value={editingContent}
+                                  onChange={(e) => setEditingContent(e.target.value)}
+                                  className="w-full rounded-t-xl border-0 bg-transparent p-4 text-sm sm:text-base text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-0 resize-none"
+                                  rows={Math.max(3, Math.ceil(editingContent.split('\n').length))}
+                                  placeholder="Edit your message..."
+                                  autoFocus
+                                />
+                                <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-gray-100">
+                                  <button
+                                    onClick={cancelMessageEditing}
+                                    className="rounded-lg px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 transition-colors"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    onClick={saveEdit}
+                                    className="rounded-lg px-4 py-2 text-sm font-semibold text-white shadow-sm hover:shadow-md transition-all"
+                                    style={{ background: 'var(--primary)', color: 'var(--primary-foreground)' }}
+                                  >
+                                    Save & Regenerate
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="rounded-2xl rounded-tr-sm p-4 sm:p-5 shadow-sm transition-all duration-200" style={{ background: 'var(--primary)', color: 'var(--primary-foreground)' }}>
+                                  <div className="text-sm sm:text-base leading-relaxed text-white whitespace-pre-wrap">{m.content}</div>
+                                </div>
+                                {/* Hover actions */}
+                                <div className="flex items-center gap-1 mt-2 justify-end opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                  <button
+                                    onClick={() => startEditing(m.id, m.content)}
+                                    className="rounded-md p-1.5 hover:bg-gray-100 transition-colors"
+                                    title="Edit message"
+                                  >
+                                    <Edit className="h-3.5 w-3.5 text-gray-600" />
+                                  </button>
+                                  <button
+                                    onClick={() => onCopy(m.content)}
+                                    className="rounded-md p-1.5 hover:bg-gray-100 transition-colors"
+                                    title="Copy message"
+                                  >
+                                    <Copy className="h-3.5 w-3.5 text-gray-600" />
+                                  </button>
+                                </div>
+                              </>
+                            )}
                           </div>
-                          <div className="text-sm leading-relaxed text-gray-800 whitespace-pre-wrap">{m.content}</div>
+                        </div>
+                        {/* Avatar on right */}
+                        <div className="flex-shrink-0">
+                          <div className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-full bg-gray-300">
+                            <span className="text-xs sm:text-sm font-semibold text-gray-700">U</span>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -2162,25 +2351,13 @@ function VerifyPage() {
               ))
             )}
 
-            {/* Premium Loading state */}
+            {/* Loading state */}
             {loading && (
-              <div className="flex w-full justify-center px-4">
-                <div className="w-full max-w-4xl">
-                  <div className="rounded-2xl bg-gradient-to-br from-white to-gray-50/50 border border-gray-200/80 p-5 sm:p-6 shadow-sm backdrop-blur-sm">
-                  <div className="mb-4 flex items-center gap-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 shadow-sm animate-pulse">
-                      <img src="/Images/Fakeverifier-official-logo.png" alt="FakeVerifier" className="h-5 w-5 object-contain" />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-gray-900">FakeVerifier</span>
-                      <CheckCircle2 className="h-4 w-4" style={{ color: 'var(--primary)' }} />
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 text-gray-600">
-                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-gray-200" style={{ borderTopColor: 'var(--primary)' }}></div>
-                    <TextShimmer className='font-mono text-sm [--base-color:var(--primary)]'>
-                        Analyzing your input...
-                      </TextShimmer>
+              <div className="flex w-full justify-center px-3 sm:px-4 py-3 sm:py-4">
+                <div className="w-full max-w-3xl flex gap-3 sm:gap-4">
+                  <div className="flex-1 min-w-0 pl-2 sm:pl-3">
+                    <div className="py-1">
+                      <AILoadingState />
                     </div>
                   </div>
                 </div>
@@ -2367,7 +2544,7 @@ function VerifyPage() {
               <span className="text-sm text-gray-800">Memories</span>
             </button>
             <button 
-              onClick={() => { router.push('/settings'); }}
+              onClick={() => { setShowSettingsModal(true); }}
               className="mb-3 flex w-full items-center gap-3 rounded-full p-2 bg-white border border-gray-200 hover:bg-gray-50">
               <div className="grid h-8 w-8 place-items-center rounded-full bg-gray-100">
                 <Settings className="h-4 w-4 text-gray-800" />
@@ -2434,7 +2611,7 @@ function VerifyPage() {
                         onClick={(e) => {
                           e.stopPropagation();
                           setUserDropdownOpen(false);
-                          router.push('/settings');
+                          setShowSettingsModal(true);
                         }}
                         className="flex w-full items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
                       >
@@ -2555,7 +2732,7 @@ function VerifyPage() {
       </div>
       
             {/* Messages */}
-            <div className="flex-1 space-y-6 sm:space-y-8 overflow-y-auto px-3 sm:px-4 md:px-6 py-6 sm:py-8">
+            <div className="flex-1 overflow-y-auto">
           {messages.length === 0 ? (
                 <div className="grid h-full place-items-center">
               <div className="text-center px-4 max-w-2xl">
@@ -2617,90 +2794,108 @@ function VerifyPage() {
             </div>
           ) : (
                 messages.map((m, index) => (
-                  <div key={m.id} className="flex w-full justify-center px-4 sm:px-6">
-                    <div className="w-full max-w-4xl">
+                  <div key={m.id} className="flex w-full justify-center px-4 sm:px-6 py-4">
+                    <div className="w-full max-w-3xl flex gap-4">
                       {m.role === 'assistant' ? (
-                        <div className="group relative">
-                          <div className="rounded-2xl bg-white border border-gray-200 p-5 sm:p-6 lg:p-7 shadow-sm hover:shadow-md transition-all duration-200">
-                            {/* Premium header with avatar */}
-                            <div className="mb-4 flex items-center gap-3">
-                              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 shadow-sm">
-                              <img src="/Images/Fakeverifier-official-logo.png" alt="FakeVerifier" className="h-5 w-5 object-contain" />
-                          </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-semibold text-gray-900">FakeVerifier</span>
-                              <CheckCircle2 className="h-4 w-4" style={{ color: 'var(--primary)' }} />
-                    </div>
-                          </div>
-                            
-                            {/* Message content */}
-                            <div className="mb-4">
+                        <div className="group flex gap-4 w-full">
+                          {/* Message content - plain text without container */}
+                          <div className="flex-1 min-w-0 pl-3">
+                            <div className="py-1">
                               <AssistantMessage 
                                 message={m} 
                                 isLastMessage={index === messages.length - 1} 
                                 isStreaming={loading}
                               />
                             </div>
-                            
-                            {/* Premium action buttons */}
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                            {/* Action buttons */}
+                            <div className="flex items-center gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                               <button 
                                 onClick={() => onFeedback(m.id, 'up')} 
-                                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+                                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
                               >
                                 <ThumbsUp className="h-3.5 w-3.5" />
-                                <span>Helpful</span>
                               </button>
                               <button 
                                 onClick={() => onFeedback(m.id, 'down')} 
-                                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+                                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
                               >
                                 <ThumbsDown className="h-3.5 w-3.5" />
-                                <span>Not helpful</span>
                               </button>
-                              <div className="mx-1 h-4 w-px bg-gray-300" />
+                              <div className="mx-1 h-3 w-px bg-gray-300" />
                               <button 
                                 onClick={() => onCopy(m.content)} 
-                                className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+                                className="rounded-md p-1.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
                                 title="Copy"
                               >
-                                <Copy className="h-4 w-4" />
+                                <Copy className="h-3.5 w-3.5" />
                               </button>
                               {user && (
                                 <button 
                                   onClick={() => onShare(m.content)} 
-                                  className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+                                  className="rounded-md p-1.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
                                   title="Share"
                                 >
-                                  <Share className="h-4 w-4" />
+                                  <Share className="h-3.5 w-3.5" />
                                 </button>
                               )}
                               <button 
                                 onClick={onRegenerate} 
-                                className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+                                className="rounded-md p-1.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
                                 title="Regenerate"
                               >
-                                <RotateCcw className="h-4 w-4" />
-                          </button>
-                        </div>
-
-                            {/* Premium Feedback tray when thumbs down */}
-                          {feedbackForMessageId === m.id && (
-                              <div className="mt-4 rounded-xl border border-gray-200 bg-gradient-to-br from-gray-50 to-white p-4 shadow-sm">
+                                <RotateCcw className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                            {/* Feedback tray */}
+                            {feedbackForMessageId === m.id && (
+                              <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50/50 p-4 shadow-sm">
                                 <div className="mb-3 text-sm font-semibold text-gray-900">Tell us more:</div>
                                 <div className="flex flex-wrap gap-2 mb-4">
-                                {(dynamicReasons.length ? dynamicReasons : ['Not clear enough','Missing context','Not factual','Too verbose']).map((label) => (
+                                  {(dynamicReasons.length ? dynamicReasons : ['Not clear enough','Missing context','Not factual','Too verbose']).map((label) => (
+                                    <button
+                                      key={label}
+                                      disabled={feedbackSubmitting}
+                                      onClick={async () => {
+                                        if (!user || !currentConversationId) return;
+                                        try {
+                                          setFeedbackSubmitting(true);
+                                          await fetch('/api/feedback', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ uid: user.uid, conversationId: currentConversationId, messageId: m.id, type: 'down', reason: label })
+                                          });
+                                        } catch (e) {
+                                          // Silent fail for feedback
+                                        } finally {
+                                          setFeedbackSubmitting(false);
+                                          setFeedbackForMessageId(null);
+                                        }
+                                      }}
+                                      className="rounded-full border border-gray-300 bg-white px-4 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                                    >
+                                      {label}
+                                    </button>
+                                  ))}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <input 
+                                    id={`note-desktop-${m.id}`} 
+                                    className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all" 
+                                    placeholder="Optional note (max 120 chars)" 
+                                    maxLength={120} 
+                                  />
                                   <button
-                                    key={label}
                                     disabled={feedbackSubmitting}
                                     onClick={async () => {
+                                      const inputEl = document.getElementById(`note-desktop-${m.id}`) as HTMLInputElement | null;
+                                      const note = inputEl?.value || '';
                                       if (!user || !currentConversationId) return;
                                       try {
                                         setFeedbackSubmitting(true);
                                         await fetch('/api/feedback', {
                                           method: 'POST',
                                           headers: { 'Content-Type': 'application/json' },
-                                          body: JSON.stringify({ uid: user.uid, conversationId: currentConversationId, messageId: m.id, type: 'down', reason: label })
+                                          body: JSON.stringify({ uid: user.uid, conversationId: currentConversationId, messageId: m.id, type: 'down', reason: 'More...', note })
                                         });
                                       } catch (e) {
                                         // Silent fail for feedback
@@ -2709,122 +2904,91 @@ function VerifyPage() {
                                         setFeedbackForMessageId(null);
                                       }
                                     }}
-                                      className="rounded-full border border-gray-300 bg-white px-4 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                                  >
-                                    {label}
-                                  </button>
-                                ))}
-                              </div>
-                                <div className="flex items-center gap-2">
-                                  <input 
-                                    id={`note-${m.id}`} 
-                                    className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all" 
-                                    placeholder="Optional note (max 120 chars)" 
-                                    maxLength={120} 
-                                  />
-                                <button
-                                  disabled={feedbackSubmitting}
-                                  onClick={async () => {
-                                    const inputEl = document.getElementById(`note-${m.id}`) as HTMLInputElement | null;
-                                    const note = inputEl?.value || '';
-                                    if (!user || !currentConversationId) return;
-                                    try {
-                                      setFeedbackSubmitting(true);
-                                      await fetch('/api/feedback', {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ uid: user.uid, conversationId: currentConversationId, messageId: m.id, type: 'down', reason: 'More...', note })
-                                      });
-                                    } catch (e) {
-                                      // Silent fail for feedback
-                                    } finally {
-                                      setFeedbackSubmitting(false);
-                                      setFeedbackForMessageId(null);
-                                    }
-                                  }}
-                                    className="rounded-lg px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:shadow-md transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                                  style={{ background: 'var(--primary)', color: 'var(--primary-foreground)' }}
-                                >
-                                  Send
-                                </button>
-                                <button
-                                  disabled={feedbackSubmitting}
-                                  onClick={() => setFeedbackForMessageId(null)}
-                                    className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                    </div>
-                       ) : (
-                      // Premium User message
-                        <div className="group relative">
-                        <div className="rounded-2xl bg-gray-100 border border-gray-200 p-5 sm:p-6 lg:p-7 shadow-sm hover:shadow-md transition-all duration-200">
-                            <div className="mb-3 flex items-center gap-3">
-                              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-300 shadow-sm">
-                                <span className="text-sm font-semibold text-gray-700">U</span>
-                              </div>
-                              <span className="text-sm font-semibold text-gray-900">You</span>
-                            </div>
-                            {editingMessageId === m.id ? (
-                              // Edit mode
-                              <div className="space-y-3">
-                                <textarea
-                                  value={editingContent}
-                                  onChange={(e) => setEditingContent(e.target.value)}
-                                  className="w-full rounded-lg border border-gray-300 bg-white p-3 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all"
-                                  rows={3}
-                                  placeholder="Edit your message..."
-                                />
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    onClick={saveEdit}
-                                    className="rounded-lg px-4 py-2 text-sm font-medium text-white shadow-sm hover:shadow-md transition-all"
+                                    className="rounded-lg px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:shadow transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                                     style={{ background: 'var(--primary)', color: 'var(--primary-foreground)' }}
                                   >
-                                    Save & Regenerate
+                                    Send
                                   </button>
                                   <button
-                                    onClick={cancelMessageEditing}
-                                    className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                                    disabled={feedbackSubmitting}
+                                    onClick={() => setFeedbackForMessageId(null)}
+                                    className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
                                   >
                                     Cancel
                                   </button>
                                 </div>
                               </div>
-                            ) : (
-                              // Display mode
-                              <div className="relative">
-                                <div className="text-sm leading-relaxed text-gray-800 whitespace-pre-wrap">{m.content}</div>
-                                {/* Hover actions */}
-                                <div className="absolute -bottom-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <div className="flex items-center gap-1 rounded-lg bg-white border border-gray-200 p-1 shadow-lg">
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="group flex gap-4 w-full justify-end">
+                          {/* Message content on right */}
+                          <div className="flex-1 min-w-0 flex justify-end">
+                            <div className="max-w-[85%] lg:max-w-[80%]">
+                              {editingMessageId === m.id ? (
+                                // Edit mode - ChatGPT style
+                                <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+                                  <textarea
+                                    value={editingContent}
+                                    onChange={(e) => setEditingContent(e.target.value)}
+                                    className="w-full rounded-t-xl border-0 bg-transparent p-4 text-sm lg:text-base text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-0 resize-none"
+                                    rows={Math.max(3, Math.ceil(editingContent.split('\n').length))}
+                                    placeholder="Edit your message..."
+                                    autoFocus
+                                  />
+                                  <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-gray-100">
+                                    <button
+                                      onClick={cancelMessageEditing}
+                                      className="rounded-lg px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 transition-colors"
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button
+                                      onClick={saveEdit}
+                                      className="rounded-lg px-4 py-2 text-sm font-semibold text-white shadow-sm hover:shadow-md transition-all"
+                                      style={{ background: 'var(--primary)', color: 'var(--primary-foreground)' }}
+                                    >
+                                      Save & Regenerate
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="rounded-2xl rounded-tr-sm p-5 lg:p-6 shadow-sm transition-all duration-200" style={{ background: 'var(--primary)', color: 'var(--primary-foreground)' }}>
+                                    <div className="text-sm lg:text-base leading-relaxed text-white whitespace-pre-wrap">{m.content}</div>
+                                  </div>
+                                  {/* Hover actions */}
+                                  <div className="flex items-center gap-1 mt-2 justify-end opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                                     <button
                                       onClick={() => startEditing(m.id, m.content)}
-                                      className="rounded p-1.5 hover:bg-gray-100 transition-colors"
+                                      className="rounded-md p-1.5 hover:bg-gray-100 transition-colors"
                                       title="Edit message"
                                     >
                                       <Edit className="h-3.5 w-3.5 text-gray-600" />
                                     </button>
                                     <button
                                       onClick={() => onCopy(m.content)}
-                                      className="rounded p-1.5 hover:bg-gray-100 transition-colors"
+                                      className="rounded-md p-1.5 hover:bg-gray-100 transition-colors"
                                       title="Copy message"
                                     >
                                       <Copy className="h-3.5 w-3.5 text-gray-600" />
                                     </button>
                                   </div>
-                                </div>
-                              </div>
-                            )}
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          {/* Avatar on right */}
+                          <div className="flex-shrink-0">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-300">
+                              <span className="text-sm font-semibold text-gray-700">U</span>
+                            </div>
                           </div>
                         </div>
-                       )}
+                      )}
+                    </div>
                   </div>
-                </div>
                 ))
           )}
 
@@ -2837,28 +3001,16 @@ function VerifyPage() {
             </div>
           )}
           
-          {/* Premium Loading state for AI response */}
+          {/* Loading state for AI response */}
           {loading && (
-            <div className="flex w-full justify-center px-4 sm:px-6">
-              <div className="w-full max-w-4xl">
-                <div className="rounded-2xl bg-white border border-gray-200 p-5 sm:p-6 lg:p-7 shadow-sm">
-                  <div className="mb-4 flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 shadow-sm animate-pulse">
-                      <img src="/Images/Fakeverifier-official-logo.png" alt="FakeVerifier" className="h-5 w-5 object-contain" />
-                  </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-gray-900">FakeVerifier</span>
-                      <CheckCircle2 className="h-4 w-4" style={{ color: 'var(--primary)' }} />
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 text-gray-600">
-                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-gray-200" style={{ borderTopColor: 'var(--primary)' }}></div>
-                    <TextShimmer className='font-mono text-sm [--base-color:var(--primary)]'>
-                      Analyzing your input...
-                    </TextShimmer>
-                    </div>
+            <div className="flex w-full justify-center px-4 sm:px-6 py-4">
+              <div className="w-full max-w-3xl flex gap-4">
+                <div className="flex-1 min-w-0 pl-3">
+                  <div className="py-1">
+                    <AILoadingState />
                   </div>
                 </div>
+              </div>
             </div>
           )}
         </div>
@@ -3150,6 +3302,9 @@ function VerifyPage() {
           }}
         />
       )}
+
+      {/* Settings Modal */}
+      <SettingsModal open={showSettingsModal} onClose={() => setShowSettingsModal(false)} />
 
       {/* Memory Modal */}
       {showMemorySidebar && (
