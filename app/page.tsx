@@ -2,7 +2,8 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { ArrowRight, ChevronRight, ExternalLink, Github, Shield, Search, CheckCircle, Zap, FileText, Users, Upload, Globe, Gavel } from 'lucide-react';
+import { ArrowRight, ChevronRight, ExternalLink, Github, Shield, Search, CheckCircle, Zap, FileText, Users } from 'lucide-react';
+import DemoCarousel from '@/components/DemoCarousel';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
@@ -112,102 +113,8 @@ export default function Home() {
           </div>
         </section>
 
-        {/* How it works section */}
-        <section className="relative py-14 relative z-10">
-          <div className="mx-auto max-w-screen-xl px-4 md:px-8">
-            <div className="relative mx-auto max-w-2xl sm:text-center mb-12">
-              <h3 className="font-sans mt-4 text-3xl font-bold tracking-tighter sm:text-4xl md:text-5xl" style={{ color: 'var(--foreground)' }}>
-                How it works
-              </h3>
-              <p className="font-sans mt-3" style={{ color: 'var(--muted-foreground)' }}>
-                Our three-step verification process ensures accurate, evidence-based results every time.
-              </p>
-            </div>
-            
-            <div className="mx-auto my-8 grid w-full max-w-7xl grid-cols-1 gap-6 p-4 md:grid-cols-3">
-              <div className="scale-in group visible cursor-pointer" style={{ transform: 'translateY(0px) scale(1)' }}>
-                <div
-                  className="relative transform overflow-hidden rounded-2xl p-6 shadow-lg transition-all duration-300 group-hover:scale-105 hover:shadow-xl backdrop-blur-sm"
-                  style={{
-                    background: 'var(--card)',
-                    border: '1px solid var(--border)',
-                    boxShadow: 'var(--shadow)'
-                  }}
-                >
-                  <div className="relative">
-                    <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg" style={{ background: 'var(--primary)', color: 'var(--primary-foreground)' }}>
-                      <Upload className="h-6 w-6" />
-                    </div>
-                    <h3 className="mb-2 font-sans text-lg font-medium" style={{ color: 'var(--foreground)' }}>
-                      Step 1: Ingest
-                    </h3>
-                    <p className="mb-4 font-sans text-sm" style={{ color: 'var(--muted-foreground)' }}>
-                      Normalize input, expand URLs and extract top claims from your content.
-                    </p>
-                    <div className="flex items-center" style={{ color: 'var(--muted-foreground)' }}>
-                      <CheckCircle className="mr-1 h-4 w-4" />
-                      <span className="font-sans text-xs">Smart content parsing</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="scale-in group visible cursor-pointer" style={{ transform: 'translateY(0px) scale(1)' }}>
-                <div
-                  className="relative transform overflow-hidden rounded-2xl p-6 shadow-lg transition-all duration-300 group-hover:scale-105 hover:shadow-xl backdrop-blur-sm"
-                  style={{
-                    background: 'var(--card)',
-                    border: '1px solid var(--border)',
-                    boxShadow: 'var(--shadow)'
-                  }}
-                >
-                  <div className="relative">
-                    <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg" style={{ background: 'var(--primary)', color: 'var(--primary-foreground)' }}>
-                      <Globe className="h-6 w-6" />
-                    </div>
-                    <h3 className="mb-2 font-sans text-lg font-medium" style={{ color: 'var(--foreground)' }}>
-                      Step 2: Retrieve
-                    </h3>
-                    <p className="mb-4 font-sans text-sm" style={{ color: 'var(--muted-foreground)' }}>
-                      Search web and news sources to extract clean text from top sources.
-                    </p>
-                    <div className="flex items-center" style={{ color: 'var(--muted-foreground)' }}>
-                      <Search className="mr-1 h-4 w-4" />
-                      <span className="font-sans text-xs">Multi-source research</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="scale-in group visible cursor-pointer" style={{ transform: 'translateY(0px) scale(1)' }}>
-                <div
-                  className="relative transform overflow-hidden rounded-2xl p-6 shadow-lg transition-all duration-300 group-hover:scale-105 hover:shadow-xl backdrop-blur-sm"
-                  style={{
-                    background: 'var(--card)',
-                    border: '1px solid var(--border)',
-                    boxShadow: 'var(--shadow)'
-                  }}
-                >
-                  <div className="relative">
-                    <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg" style={{ background: 'var(--primary)', color: 'var(--primary-foreground)' }}>
-                      <Gavel className="h-6 w-6" />
-                    </div>
-                    <h3 className="mb-2 font-sans text-lg font-medium" style={{ color: 'var(--foreground)' }}>
-                      Step 3: Judge
-                    </h3>
-                    <p className="mb-4 font-sans text-sm" style={{ color: 'var(--muted-foreground)' }}>
-                      Cross-check, weigh evidence, and output verdict with confidence score.
-                    </p>
-                    <div className="flex items-center" style={{ color: 'var(--muted-foreground)' }}>
-                      <Shield className="mr-1 h-4 w-4" />
-                      <span className="font-sans text-xs">AI-powered analysis</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+        {/* Interactive Demo Carousel */}
+        <DemoCarousel />
       </main>
 
       {/* Premium CTA Section - Outside main container for full width */}
