@@ -82,6 +82,52 @@ export async function GET(req: NextRequest) {
         return 'No content available';
       };
       
+      // Generate dynamic title based on conversation content
+      const generateDynamicTitle = (messages: any[], currentTitle: string): string => {
+        if (currentTitle && currentTitle !== 'Untitled Conversation' && currentTitle !== 'New Conversation') {
+          return currentTitle;
+        }
+
+        if (!messages || messages.length === 0) {
+          return 'Untitled Verification';
+        }
+
+        const userMessage = messages.find((msg: any) => msg.role === 'user');
+        if (!userMessage || !userMessage.content) {
+          return 'Untitled Verification';
+        }
+
+        const content = userMessage.content.toLowerCase();
+        
+        // Check for news-related keywords
+        const newsKeywords = ['news', 'article', 'headline', 'report', 'breaking', 'latest', 'published', 'journalist', 'media', 'outlet'];
+        const isNews = newsKeywords.some(keyword => content.includes(keyword));
+        
+        // Check for fact-checking keywords
+        const factKeywords = ['fact', 'verify', 'check', 'true', 'false', 'claim', 'statement', 'information', 'accurate', 'correct'];
+        const isFact = factKeywords.some(keyword => content.includes(keyword));
+        
+        // Check for URL patterns
+        const hasUrl = /https?:\/\/[^\s]+/.test(userMessage.content);
+        
+        // Generate title based on content type
+        if (isNews || hasUrl) {
+          // Try to extract a meaningful title from the content
+          const firstSentence = userMessage.content.split(/[.!?]/)[0].trim();
+          if (firstSentence.length > 10 && firstSentence.length < 80) {
+            return firstSentence;
+          }
+          return 'News Verification';
+        } else if (isFact) {
+          const firstWords = userMessage.content.split(/\s+/).slice(0, 8).join(' ');
+          return firstWords.length > 50 ? firstWords.substring(0, 50) + '...' : firstWords;
+        } else {
+          // Normal conversation - use first meaningful words
+          const firstWords = userMessage.content.split(/\s+/).slice(0, 6).join(' ');
+          return firstWords.length > 40 ? firstWords.substring(0, 40) + '...' : firstWords;
+        }
+      };
+
       // Extract fact-checking data from the conversation
       const extractFactCheckData = (messages: any[]) => {
         if (!messages || messages.length === 0) {
@@ -192,10 +238,11 @@ export async function GET(req: NextRequest) {
       };
 
       const factCheckData = extractFactCheckData(data.messages || []);
+      const dynamicTitle = generateDynamicTitle(data.messages || [], data.title || '');
 
       return {
         id: doc.id,
-        title: data.title || 'Untitled Conversation',
+        title: dynamicTitle,
         content: getContentPreview(data.messages || []),
         verdict: factCheckData.verdict,
         confidence: factCheckData.confidence,

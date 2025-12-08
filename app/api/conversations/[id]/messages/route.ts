@@ -7,10 +7,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const conversationId = id;
     const { searchParams } = new URL(req.url);
     const uid = searchParams.get('uid');
-    
-    if (!uid) {
-      return NextResponse.json({ error: 'User ID required' }, { status: 400 });
-    }
 
     // Check if db is properly initialized
     if (!db) {
@@ -18,17 +14,31 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'Database not initialized' }, { status: 500 });
     }
 
-    // Fetch conversation and verify ownership using Admin SDK
+    // Fetch conversation using Admin SDK
     const conversationRef = db.collection('chatHistory').doc(conversationId);
     const conversation = await conversationRef.get();
     
-    if (!conversation.exists || conversation.data()?.uid !== uid) {
-      return NextResponse.json({ error: 'Conversation not found or access denied' }, { status: 404 });
+    if (!conversation.exists) {
+      return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }
 
-    const messages = conversation.data()?.messages || [];
+    const conversationData = conversation.data();
     
-    return NextResponse.json({ messages });
+    // Check access: user owns it OR conversation is public/shared
+    const isOwner = uid && conversationData?.uid === uid;
+    const isShared = conversationData?.isPublic || conversationData?.privacyLevel === 'link' || conversationData?.privacyLevel === 'public';
+    
+    if (!isOwner && !isShared) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 });
+    }
+
+    const messages = conversationData?.messages || [];
+    
+    return NextResponse.json({ 
+      messages,
+      isShared: !isOwner && isShared,
+      isOwner: !!isOwner
+    });
   } catch (error) {
     console.error('Error fetching messages:', error);
     return NextResponse.json({ error: 'Failed to fetch messages' }, { status: 500 });

@@ -4,7 +4,7 @@ import { db } from '@/lib/firebaseAdmin';
 // Continue a shared conversation in user's own chat history
 export async function POST(req: NextRequest) {
   try {
-    const { sourceConversationId, title } = await req.json();
+    const { sourceConversationId, title, uid } = await req.json();
 
     if (!sourceConversationId) {
       return NextResponse.json({ error: 'Source conversation ID required' }, { status: 400 });
@@ -30,9 +30,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Source conversation is not accessible' }, { status: 403 });
     }
 
-    // For now, we'll create a new conversation without user authentication
-    // In a real app, you'd get the user ID from the session
-    const newConversationData = {
+    // Create a new conversation for the user (or anonymous if no uid)
+    const newConversationData: any = {
       title: title || 'Continued Conversation',
       messages: sourceData.messages || [],
       isPublic: false,
@@ -46,6 +45,11 @@ export async function POST(req: NextRequest) {
       sourceConversationId: sourceConversationId,
       isContinued: true
     };
+
+    // Add uid if provided (for logged-in users)
+    if (uid) {
+      newConversationData.uid = uid;
+    }
 
     const newConversationRef = await db.collection('chatHistory').add(newConversationData);
 

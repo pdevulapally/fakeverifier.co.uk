@@ -465,6 +465,9 @@ function VerifyPage() {
   const [creditsRefreshKey, setCreditsRefreshKey] = useState(0);
   const [creditsData, setCreditsData] = useState<{ daily: number; monthly: number; plan: string } | null>(null);
   const [creditsExhausted, setCreditsExhausted] = useState(false);
+  const [isSharedConversation, setIsSharedConversation] = useState(false);
+  const [conversationOwner, setConversationOwner] = useState<string | null>(null);
+  const [conversationTitle, setConversationTitle] = useState<string | null>(null);
 
   // Sidebar defaults to closed - removed auto-open behavior
   // Sidebar is hidden for anonymous users
@@ -552,8 +555,8 @@ function VerifyPage() {
     setShowPrivacyWarning(false);
     setIsPublic(true);
     
-    // Generate public link
-    const link = `${window.location.origin}/public-reports/${currentConversationId}`;
+    // Generate public link - use /verify?c= format
+    const link = `${window.location.origin}/verify?c=${currentConversationId}`;
     setPublicLink(link);
     
     // Update conversation privacy in database
@@ -608,11 +611,8 @@ function VerifyPage() {
         
         // Set public link if conversation is public or link-only
         if (conv.isPublic) {
-          if (conv.privacyLevel === 'public') {
-            setPublicLink(`${window.location.origin}/public-reports/${currentConversationId}`);
-          } else if (conv.privacyLevel === 'link') {
-            setPublicLink(`${window.location.origin}/shared/${currentConversationId}`);
-          }
+          // Always use /verify?c= format for all shared links
+          setPublicLink(`${window.location.origin}/verify?c=${currentConversationId}`);
         } else {
           setPublicLink(null);
         }
@@ -652,12 +652,12 @@ function VerifyPage() {
       await updateConversationPrivacy(false, 'private');
     } else if (level === 'link') {
       setIsPublic(true);
-      const link = `${window.location.origin}/shared/${currentConversationId}`;
+      const link = `${window.location.origin}/verify?c=${currentConversationId}`;
       setPublicLink(link);
       await updateConversationPrivacy(true, 'link');
     } else if (level === 'public') {
       setIsPublic(true);
-      const link = `${window.location.origin}/public-reports/${currentConversationId}`;
+      const link = `${window.location.origin}/verify?c=${currentConversationId}`;
       setPublicLink(link);
       await updateConversationPrivacy(true, 'public');
     }
@@ -986,12 +986,13 @@ function VerifyPage() {
 
   // Handle deep-linking to a conversation via ?c=CONVERSATION_ID
   useEffect(() => {
-    if (!user || authLoading) return;
+    // Allow loading even for anonymous users if conversation is shared
+    if (authLoading) return;
     const c = searchParams.get('c');
     if (c && c !== currentConversationId) {
       loadMessages(c);
     }
-  }, [searchParams, user, authLoading]);
+  }, [searchParams, authLoading]);
 
   async function loadUserPlan() {
     if (!user) return;
@@ -1083,19 +1084,38 @@ function VerifyPage() {
   }
 
   async function loadMessages(conversationId: string) {
-    if (!user) return;
-    
     try {
-      const response = await fetch(`/api/conversations/${conversationId}/messages?uid=${user.uid}`);
+      const uid = user?.uid || null;
+      const url = uid 
+        ? `/api/conversations/${conversationId}/messages?uid=${uid}`
+        : `/api/conversations/${conversationId}/messages`;
+      const response = await fetch(url);
       const data = await response.json();
       if (response.ok) {
-        setMessages(data.messages);
+        setMessages(data.messages || []);
         setCurrentConversationId(conversationId);
+        setIsSharedConversation(data.isShared || false);
+        
+        // Load conversation metadata to get title and owner info
+        try {
+          const convResponse = await fetch(`/api/conversations/${conversationId}${uid ? `?uid=${uid}` : ''}`);
+          const convData = await convResponse.json();
+          if (convResponse.ok) {
+            setConversationTitle(convData.title || null);
+            // Don't store owner UID - it's not user-friendly to display
+            setConversationOwner(null);
+          }
+        } catch (e) {
+          // Silent fail for conversation metadata
+        }
+        
         // Update URL to reflect current conversation without full reload
         router.replace(`/verify?c=${conversationId}`);
+      } else {
+        setError(data.error || 'Failed to load conversation');
       }
     } catch (error) {
-      // Silent fail for message loading
+      setError('Failed to load conversation');
     }
   }
 
@@ -1195,6 +1215,45 @@ function VerifyPage() {
   const onVerify = async (inputText: string, model?: string, imageFiles?: File[], regenerate?: boolean) => {
     if (!inputText || !inputText.trim()) {
       return;
+    }
+    
+    // If viewing a shared conversation, create a new conversation to continue
+    if (isSharedConversation && !regenerate) {
+      try {
+        // Create a new conversation based on the shared one
+        const continueResponse = await fetch('/api/conversations/continue', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sourceConversationId: currentConversationId,
+            title: `Continued: ${conversationTitle || 'Shared Conversation'}`,
+            uid: user?.uid || null
+          })
+        });
+
+        if (continueResponse.ok) {
+          const data = await continueResponse.json();
+          const newConversationId = data.id;
+          setCurrentConversationId(newConversationId);
+          setIsSharedConversation(false);
+          setConversationOwner(null);
+          // Copy messages to new conversation
+          setMessages([...messages]);
+          // Update URL
+          router.replace(`/verify?c=${newConversationId}`);
+          // Reload conversations if user is logged in
+          if (user) {
+            await loadConversations();
+          }
+        } else {
+          setError('Failed to continue conversation. Please try again.');
+          return;
+        }
+      } catch (error) {
+        console.error('Error continuing conversation:', error);
+        setError('Failed to continue conversation. Please try again.');
+        return;
+      }
     }
     
     // Check credits before proceeding (for logged-in users)
@@ -2106,6 +2165,32 @@ function VerifyPage() {
 
         {/* Mobile Main Content */}
         <div className="flex flex-col h-[calc(100vh-60px)] overflow-hidden">
+          {/* Shared Conversation Banner */}
+          {isSharedConversation && (
+            <div className="px-2 sm:px-4 md:px-6 lg:px-8 py-2 sm:py-3">
+              <div className="mx-auto max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg xl:max-w-xl">
+                <div className="bg-white rounded-lg border border-blue-200 px-3 sm:px-4 py-2 sm:py-2.5 shadow-sm">
+                  <div className="flex items-start gap-2 sm:gap-2.5">
+                    <Share className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-blue-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mb-0.5 sm:mb-1">
+                        <span className="text-[11px] sm:text-xs font-semibold text-blue-900">Shared Conversation</span>
+                        <span className="px-1.5 sm:px-2 py-0.5 text-[9px] sm:text-[10px] font-medium bg-blue-100 text-blue-700 rounded-full whitespace-nowrap">View Only</span>
+                      </div>
+                      {conversationTitle && (
+                        <p className="text-[11px] sm:text-xs text-blue-700 mb-1 sm:mb-1.5 break-words line-clamp-1">
+                          <span className="font-medium">{conversationTitle}</span>
+                        </p>
+                      )}
+                      <p className="text-[10px] sm:text-[11px] text-blue-600 leading-tight sm:leading-snug">
+                        Send a message to continue this conversation in your own chat.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           {/* Messages */}
           <div className="flex-1 overflow-y-auto">
             {messages.length === 0 ? (
@@ -2731,6 +2816,33 @@ function VerifyPage() {
               </div>
       </div>
       
+            {/* Shared Conversation Banner */}
+            {isSharedConversation && (
+              <div className="px-2 sm:px-4 md:px-6 lg:px-8 py-2 sm:py-3">
+                <div className="mx-auto max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg xl:max-w-xl">
+                  <div className="bg-white rounded-lg border border-blue-200 px-3 sm:px-4 md:px-5 py-2 sm:py-2.5 shadow-sm">
+                    <div className="flex items-start gap-2 sm:gap-2.5 md:gap-3">
+                      <Share className="h-3.5 w-3.5 sm:h-4 sm:w-4 md:h-5 md:w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mb-0.5 sm:mb-1">
+                          <span className="text-[11px] sm:text-xs md:text-sm font-semibold text-blue-900">Shared Conversation</span>
+                          <span className="px-1.5 sm:px-2 py-0.5 text-[9px] sm:text-[10px] md:text-xs font-medium bg-blue-100 text-blue-700 rounded-full whitespace-nowrap">View Only</span>
+                        </div>
+                        {conversationTitle && (
+                          <p className="text-[11px] sm:text-xs md:text-sm text-blue-700 mb-1 sm:mb-1.5 break-words line-clamp-1">
+                            <span className="font-medium">{conversationTitle}</span>
+                          </p>
+                        )}
+                        <p className="text-[10px] sm:text-[11px] md:text-xs text-blue-600 leading-tight sm:leading-snug">
+                          Send a message to continue this conversation in your own chat.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             {/* Messages */}
             <div className="flex-1 overflow-y-auto">
           {messages.length === 0 ? (
