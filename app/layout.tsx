@@ -1,9 +1,11 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import '@/components/CardNav.css';
+import 'bootstrap/dist/css/bootstrap.min.css';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ToastProvider } from '@/components/ui/toast';
 import ClientLayoutWrapper from '@/components/ClientLayoutWrapper';
+import BootstrapClient from '@/components/BootstrapClient';
 
 // SEO Metadata Configuration
 export const metadata: Metadata = {
@@ -187,6 +189,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </ClientLayoutWrapper>
           </ToastProvider>
         </AuthProvider>
+        <BootstrapClient />
       </body>
     </html>
   );

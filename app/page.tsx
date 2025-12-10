@@ -65,7 +65,7 @@ export default function Home() {
           }}
         ></div>
 
-        <section className="relative py-14 relative z-10">
+        <section id="features" className="relative py-14 relative z-10">
           <div className="mx-auto max-w-screen-xl px-4 md:px-8">
             <div className="relative mx-auto max-w-2xl sm:text-center">
               <div className="relative z-10">
@@ -113,7 +113,7 @@ export default function Home() {
         </section>
 
         {/* How it works section */}
-        <section className="relative py-14 relative z-10">
+        <section id="how-it-works" className="relative py-14 relative z-10">
           <div className="mx-auto max-w-screen-xl px-4 md:px-8">
             <div className="relative mx-auto max-w-2xl sm:text-center mb-12">
               <h3 className="font-sans mt-4 text-3xl font-bold tracking-tighter sm:text-4xl md:text-5xl" style={{ color: 'var(--foreground)' }}>

@@ -317,92 +317,96 @@ export default function PublicReportDetailPage() {
     <div className="min-h-screen bg-white">
       {/* Header Section - White Background */}
       <div className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-32 pb-6">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 sm:pt-24 lg:pt-32 pb-4 sm:pb-6">
           {/* Breadcrumbs */}
-          <div className="mb-4">
+          <div className="mb-3 sm:mb-4">
             <button
               onClick={() => router.push('/public-reports')}
-              className="text-sm text-gray-600 hover:text-gray-900 transition-colors"
+              className="text-xs sm:text-sm text-gray-600 hover:text-gray-900 transition-colors"
             >
               Public Reports
             </button>
-            <span className="text-sm text-gray-400 mx-2">/</span>
-            <span className="text-sm text-gray-900 font-medium">{report.title || 'Verification'}</span>
+            <span className="text-xs sm:text-sm text-gray-400 mx-2">/</span>
+            <span className="text-xs sm:text-sm text-gray-900 font-medium truncate max-w-[200px] sm:max-w-none inline-block">{report.title || 'Verification'}</span>
           </div>
 
           {/* Title and Author Info */}
-          <div className="flex items-start justify-between gap-6 mb-4">
-            <div className="flex-1">
-              <h1 className="text-3xl font-bold text-gray-900 mb-3">{report.title || 'Untitled Verification'}</h1>
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
+          <div className="mb-4">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 mb-3 sm:mb-4 break-words">{report.title || 'Untitled Verification'}</h1>
+            
+            {/* Mobile Layout: Compact single row */}
+            <div className="flex items-center justify-between gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+              {/* Left: Author and Stats in one compact row */}
+              <div className="flex-1 min-w-0 flex items-center gap-3 sm:flex-col sm:items-start sm:gap-0">
+                {/* Author */}
+                <div className="flex items-center gap-2 flex-shrink-0">
                   <div className="h-8 w-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-semibold">
                     {authorInitials}
                   </div>
-                  <span className="text-sm text-gray-700">{report.author || 'Anonymous'}</span>
+                  <span className="text-sm text-gray-700 truncate max-w-[80px] sm:max-w-none">{report.author || 'Anonymous'}</span>
                 </div>
-                <div className="flex items-center gap-4 text-sm text-gray-600">
+                {/* Stats - inline with author on mobile */}
+                <div className="flex items-center gap-2.5 sm:gap-4 text-xs text-gray-600 sm:ml-10 sm:mt-2">
                   <div className="flex items-center gap-1">
-                    <Eye className="h-4 w-4" />
+                    <Eye className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                     <span>{report.views}</span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <ThumbsUp className="h-4 w-4" />
+                    <ThumbsUp className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                     <span>{report.likes}</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <MessageCircle className="h-4 w-4" />
-                    <span>{comments.length}</span>
                   </div>
                 </div>
               </div>
-            </div>
-            
-            {/* Action Icons */}
-            <div className="flex items-center gap-2">
-              <button className="p-2 rounded-lg hover:bg-gray-100 transition-colors">
-                <Bookmark className="h-5 w-5 text-gray-600" />
-              </button>
-              <button className="p-2 rounded-lg hover:bg-gray-100 transition-colors">
-                <Heart className="h-5 w-5 text-gray-600" />
-              </button>
-              <button
-                onClick={() => router.push(`/verify?c=${reportId}`)}
-                className="px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-                style={{ 
-                  background: 'var(--primary)', 
-                  color: 'var(--primary-foreground)'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.opacity = '0.9';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.opacity = '1';
-                }}
-              >
-                <span>Open in FakeVerifier</span>
-              </button>
+              
+              {/* Right: Action Buttons - Compact row on mobile */}
+              <div className="flex items-center gap-1.5 sm:flex-col sm:items-end sm:gap-2 flex-shrink-0">
+                {/* Icon buttons */}
+                <button className="p-1.5 sm:p-2 rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors" aria-label="Bookmark">
+                  <Bookmark className="h-4 w-4 sm:h-5 sm:w-5 text-gray-600" />
+                </button>
+                <button className="p-1.5 sm:p-2 rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors" aria-label="Like">
+                  <Heart className="h-4 w-4 sm:h-5 sm:w-5 text-gray-600" />
+                </button>
+                {/* Open button */}
+                <button
+                  onClick={() => router.push(`/verify?c=${reportId}`)}
+                  className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors whitespace-nowrap"
+                  style={{ 
+                    background: 'var(--primary)', 
+                    color: 'var(--primary-foreground)'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.opacity = '0.9';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.opacity = '1';
+                  }}
+                >
+                  <span className="hidden sm:inline">Open in FakeVerifier</span>
+                  <span className="sm:hidden">Open</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       {/* Main Content Area */}
-      <div className="bg-white min-h-[700px] py-8">
+      <div className="bg-white min-h-[400px] sm:min-h-[600px] lg:min-h-[700px] py-4 sm:py-6 lg:py-8">
         {/* Iframe Section - Centered with Border Radius */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="relative bg-white rounded-xl overflow-hidden shadow-2xl border border-gray-200" style={{ maxWidth: '1200px', margin: '0 auto' }}>
+          <div className="relative bg-white rounded-lg sm:rounded-xl overflow-hidden shadow-lg sm:shadow-2xl border border-gray-200" style={{ maxWidth: '1200px', margin: '0 auto' }}>
             {iframeLoading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-gray-50 z-10 rounded-xl">
-                <div className="text-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-                  <p className="text-sm text-gray-500">Loading conversation...</p>
+              <div className="absolute inset-0 flex items-center justify-center bg-gray-50 z-10 rounded-lg sm:rounded-xl">
+                <div className="text-center px-4">
+                  <div className="animate-spin rounded-full h-6 w-6 sm:h-8 sm:w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                  <p className="text-xs sm:text-sm text-gray-500">Loading conversation...</p>
                 </div>
               </div>
             )}
             <iframe
               src={`/verify?c=${reportId}`}
-              className="w-full h-[700px] border-0 rounded-xl"
+              className="w-full h-[400px] sm:h-[600px] lg:h-[700px] border-0 rounded-lg sm:rounded-xl"
               title="Conversation Preview"
               allow="clipboard-read; clipboard-write"
               onLoad={() => setIframeLoading(false)}
@@ -413,30 +417,30 @@ export default function PublicReportDetailPage() {
 
       {/* Footer Section - White Background */}
       <div className="bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8 mb-6 sm:mb-8">
             {/* Left Column - About */}
             <div className="lg:col-span-2">
-              <h2 className="text-lg font-bold text-gray-900 mb-3">About</h2>
-              <p className="text-gray-700 mb-4 leading-relaxed">
+              <h2 className="text-base sm:text-lg font-bold text-gray-900 mb-2 sm:mb-3">About</h2>
+              <p className="text-sm sm:text-base text-gray-700 mb-3 sm:mb-4 leading-relaxed">
                 This verification was created using FakeVerifier, an AI-powered fact-checking tool. The conversation above shows the complete verification process, including the original claim, AI analysis, evidence gathering, and final verdict with confidence score.
               </p>
-              <p className="text-gray-700 mb-6 leading-relaxed">
+              <p className="text-sm sm:text-base text-gray-700 mb-4 sm:mb-6 leading-relaxed">
                 Use this as a reference for fact-checking similar claims or as a foundation for understanding how AI-powered verification works.
               </p>
             </div>
 
             {/* Right Column - Tags, Share, Last Updated */}
-            <div className="space-y-6">
+            <div className="space-y-4 sm:space-y-6">
               {/* Tags */}
               {report.tags && report.tags.length > 0 && (
                 <div>
-                  <h2 className="text-lg font-bold text-gray-900 mb-3">Tags</h2>
+                  <h2 className="text-base sm:text-lg font-bold text-gray-900 mb-2 sm:mb-3">Tags</h2>
                   <div className="flex flex-wrap gap-2">
                     {report.tags.map((tag, index) => (
                       <span
                         key={index}
-                        className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors cursor-pointer"
+                        className="px-2 sm:px-3 py-1 sm:py-1.5 bg-gray-100 text-gray-700 rounded-md sm:rounded-lg text-xs sm:text-sm font-medium hover:bg-gray-200 transition-colors cursor-pointer break-words"
                       >
                         {tag}
                       </span>
@@ -447,73 +451,76 @@ export default function PublicReportDetailPage() {
 
               {/* Share */}
               <div>
-                <h2 className="text-lg font-bold text-gray-900 mb-3">Share</h2>
-                <div className="flex items-center gap-3">
+                <h2 className="text-base sm:text-lg font-bold text-gray-900 mb-2 sm:mb-3">Share</h2>
+                <div className="flex items-center gap-2 sm:gap-3">
                   <button
                     onClick={() => handleShare('twitter')}
-                    className="h-10 w-10 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
+                    className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
+                    aria-label="Share on Twitter"
                   >
-                    <Twitter className="h-5 w-5 text-gray-700" />
+                    <Twitter className="h-4 w-4 sm:h-5 sm:w-5 text-gray-700" />
                   </button>
                   <button
                     onClick={() => handleShare('copy')}
-                    className="h-10 w-10 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
+                    className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
+                    aria-label="Copy link"
                   >
                     {copied ? (
-                      <CheckCircle2 className="h-5 w-5 text-green-600" />
+                      <CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5 text-green-600" />
                     ) : (
-                      <Copy className="h-5 w-5 text-gray-700" />
+                      <Copy className="h-4 w-4 sm:h-5 sm:w-5 text-gray-700" />
                     )}
                   </button>
                   <button
                     onClick={() => handleShare('facebook')}
-                    className="h-10 w-10 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
+                    className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
+                    aria-label="Share on Facebook"
                   >
-                    <Facebook className="h-5 w-5 text-gray-700" />
+                    <Facebook className="h-4 w-4 sm:h-5 sm:w-5 text-gray-700" />
                   </button>
                 </div>
               </div>
 
               {/* Last Updated */}
               <div>
-                <p className="text-sm text-gray-500">Last Updated</p>
-                <p className="text-sm text-gray-700 font-medium">{formattedDate}</p>
+                <p className="text-xs sm:text-sm text-gray-500">Last Updated</p>
+                <p className="text-xs sm:text-sm text-gray-700 font-medium break-words">{formattedDate}</p>
               </div>
             </div>
           </div>
 
           {/* Comments Section - Threads App Style */}
-          <div className="border-t pt-8">
-            <div className="flex items-center gap-2 mb-6">
-              <MessageCircle className="h-5 w-5 text-blue-600" />
-              <h2 className="text-xl font-bold text-gray-900">Comments {comments.length > 0 && `(${comments.length})`}</h2>
+          <div className="border-t pt-6 sm:pt-8">
+            <div className="flex items-center gap-2 mb-4 sm:mb-6">
+              <MessageCircle className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 flex-shrink-0" />
+              <h2 className="text-lg sm:text-xl font-bold text-gray-900">Comments {comments.length > 0 && `(${comments.length})`}</h2>
             </div>
 
             {/* Comment Input - Instagram Style */}
-            <div className="flex gap-3 mb-6 pb-6 border-b border-gray-200">
+            <div className="flex gap-2 sm:gap-3 mb-4 sm:mb-6 pb-4 sm:pb-6 border-b border-gray-200">
               {user?.avatar ? (
                 <img 
                   src={user.avatar} 
                   alt={user?.name || 'User'} 
-                  className="h-10 w-10 rounded-full object-cover flex-shrink-0"
+                  className="h-8 w-8 sm:h-10 sm:w-10 rounded-full object-cover flex-shrink-0"
                 />
               ) : (
-                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
+                <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs sm:text-sm font-semibold flex-shrink-0">
                   {(user?.name?.charAt(0) || user?.email?.charAt(0) || 'A').toUpperCase()}
                 </div>
               )}
-              <form onSubmit={handleCommentSubmit} className="flex-1 flex gap-2">
+              <form onSubmit={handleCommentSubmit} className="flex-1 flex gap-1 sm:gap-2 min-w-0">
                 <input
                   type="text"
                   value={newComment}
                   onChange={(e) => setNewComment(e.target.value)}
                   placeholder="Add a comment..."
-                  className="flex-1 text-sm px-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
+                  className="flex-1 min-w-0 text-xs sm:text-sm px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
                 />
                 {newComment.trim() && (
                   <button
                     type="submit"
-                    className="px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                    className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors whitespace-nowrap flex-shrink-0"
                   >
                     Post
                   </button>
@@ -523,11 +530,11 @@ export default function PublicReportDetailPage() {
 
             {/* Comments List - Reddit/Instagram Style */}
             {loadingComments ? (
-              <div className="text-sm text-center py-8 text-gray-500">Loading comments...</div>
+              <div className="text-xs sm:text-sm text-center py-6 sm:py-8 text-gray-500">Loading comments...</div>
             ) : comments.length === 0 ? (
-              <div className="text-sm text-center py-8 text-gray-500">No comments yet. Be the first to comment!</div>
+              <div className="text-xs sm:text-sm text-center py-6 sm:py-8 text-gray-500">No comments yet. Be the first to comment!</div>
             ) : (
-            <div className="space-y-4">
+            <div className="space-y-3 sm:space-y-4">
               {comments.map((comment) => {
                 const showReplies = showRepliesMap[comment.id] !== false; // Default to true
                 const showReplyInput = replyingTo === comment.id;
@@ -535,41 +542,43 @@ export default function PublicReportDetailPage() {
                 return (
                   <div key={comment.id} className="space-y-2">
                     {/* Main Comment */}
-                    <div className="flex gap-3">
+                    <div className="flex gap-2 sm:gap-3">
                       {/* Avatar */}
-                      <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
+                      <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs sm:text-sm font-semibold flex-shrink-0">
                         {comment.author.charAt(0).toUpperCase()}
                       </div>
                       
                       {/* Comment Content */}
                       <div className="flex-1 min-w-0">
-                        <div className="inline-block rounded-2xl px-4 py-2.5 mb-1 bg-gray-100">
-                          <div className="flex items-baseline gap-2 mb-1">
-                            <span className="text-sm font-semibold text-gray-900">{comment.author}</span>
-                            <span className="text-xs text-gray-500">{getRelativeTime(comment.createdAt)}</span>
+                        <div className="inline-block rounded-xl sm:rounded-2xl px-3 py-2 sm:px-4 sm:py-2.5 mb-1 bg-gray-100 max-w-full">
+                          <div className="flex flex-wrap items-baseline gap-1 sm:gap-2 mb-1">
+                            <span className="text-xs sm:text-sm font-semibold text-gray-900 break-words">{comment.author}</span>
+                            <span className="text-[10px] sm:text-xs text-gray-500 whitespace-nowrap">{getRelativeTime(comment.createdAt)}</span>
                           </div>
-                          <p className="text-sm text-gray-800 leading-relaxed">{comment.content}</p>
+                          <p className="text-xs sm:text-sm text-gray-800 leading-relaxed break-words">{comment.content}</p>
                         </div>
                         
                         {/* Comment Actions */}
-                        <div className="flex items-center gap-4 mt-1 mb-2">
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-4 mt-1 mb-2">
                           <button
                             onClick={() => handleCommentInteraction(comment.id, 'like')}
-                            className="flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-green-600 transition-colors"
+                            className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs font-medium text-gray-600 hover:text-green-600 transition-colors"
+                            aria-label="Like comment"
                           >
-                            <ThumbsUp className="h-4 w-4" />
+                            <ThumbsUp className="h-3 w-3 sm:h-4 sm:w-4" />
                             <span>{comment.likes || 0}</span>
                           </button>
                           <button
                             onClick={() => handleCommentInteraction(comment.id, 'dislike')}
-                            className="flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-red-600 transition-colors"
+                            className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs font-medium text-gray-600 hover:text-red-600 transition-colors"
+                            aria-label="Dislike comment"
                           >
-                            <ThumbsDown className="h-4 w-4" />
+                            <ThumbsDown className="h-3 w-3 sm:h-4 sm:w-4" />
                             <span>{comment.dislikes || 0}</span>
                           </button>
                           <button
                             onClick={() => setReplyingTo(replyingTo === comment.id ? null : comment.id)}
-                            className="text-xs font-medium text-gray-600 hover:text-blue-600 transition-colors"
+                            className="text-[10px] sm:text-xs font-medium text-gray-600 hover:text-blue-600 transition-colors"
                           >
                             Reply
                           </button>
@@ -581,7 +590,7 @@ export default function PublicReportDetailPage() {
                                   [comment.id]: !showReplies
                                 }));
                               }}
-                              className="text-xs font-medium text-gray-600 hover:text-gray-900 transition-colors"
+                              className="text-[10px] sm:text-xs font-medium text-gray-600 hover:text-gray-900 transition-colors"
                             >
                               {showReplies ? 'Hide' : 'Show'} {comment.replies.length} {comment.replies.length === 1 ? 'reply' : 'replies'}
                             </button>
@@ -592,32 +601,32 @@ export default function PublicReportDetailPage() {
                         {showReplyInput && (
                           <form 
                             onSubmit={(e) => handleReplySubmit(comment.id, e)}
-                            className="flex gap-2 mt-2 mb-3"
+                            className="flex gap-1.5 sm:gap-2 mt-2 mb-3"
                           >
                             {user?.avatar ? (
                               <img 
                                 src={user.avatar} 
                                 alt={user?.name || 'User'} 
-                                className="h-8 w-8 rounded-full object-cover flex-shrink-0"
+                                className="h-7 w-7 sm:h-8 sm:w-8 rounded-full object-cover flex-shrink-0"
                               />
                             ) : (
-                              <div className="h-8 w-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
+                              <div className="h-7 w-7 sm:h-8 sm:w-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-[10px] sm:text-xs font-semibold flex-shrink-0">
                                 {(user?.name?.charAt(0) || user?.email?.charAt(0) || 'A').toUpperCase()}
                               </div>
                             )}
-                            <div className="flex-1 flex gap-2">
+                            <div className="flex-1 flex gap-1 sm:gap-2 min-w-0">
                               <input
                                 type="text"
                                 value={replyText}
                                 onChange={(e) => setReplyText(e.target.value)}
                                 placeholder={`Reply to ${comment.author}...`}
-                                className="flex-1 text-sm px-3 py-1.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
+                                className="flex-1 min-w-0 text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
                                 autoFocus
                               />
                               {replyText.trim() && (
                                 <button
                                   type="submit"
-                                  className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                                  className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs sm:text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors whitespace-nowrap flex-shrink-0"
                                 >
                                   Post
                                 </button>
@@ -628,33 +637,35 @@ export default function PublicReportDetailPage() {
 
                         {/* Replies - Reddit Style with Indentation */}
                         {comment.replies && comment.replies.length > 0 && showReplies && (
-                          <div className="ml-4 mt-3 space-y-3 border-l-2 border-gray-200 pl-4">
+                          <div className="ml-2 sm:ml-4 mt-2 sm:mt-3 space-y-2 sm:space-y-3 border-l-2 border-gray-200 pl-2 sm:pl-4">
                             {comment.replies.map((reply) => (
-                              <div key={reply.id} className="flex gap-2">
-                                <div className="h-8 w-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
+                              <div key={reply.id} className="flex gap-1.5 sm:gap-2">
+                                <div className="h-7 w-7 sm:h-8 sm:w-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-[10px] sm:text-xs font-semibold flex-shrink-0">
                                   {reply.author.charAt(0).toUpperCase()}
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <div className="inline-block rounded-2xl px-3 py-1.5 mb-1 bg-gray-100">
-                                    <div className="flex items-baseline gap-2 mb-0.5">
-                                      <span className="text-xs font-semibold text-gray-900">{reply.author}</span>
-                                      <span className="text-[10px] text-gray-500">{getRelativeTime(reply.createdAt)}</span>
+                                  <div className="inline-block rounded-xl sm:rounded-2xl px-2 py-1 sm:px-3 sm:py-1.5 mb-1 bg-gray-100 max-w-full">
+                                    <div className="flex flex-wrap items-baseline gap-1 sm:gap-2 mb-0.5">
+                                      <span className="text-[10px] sm:text-xs font-semibold text-gray-900 break-words">{reply.author}</span>
+                                      <span className="text-[9px] sm:text-[10px] text-gray-500 whitespace-nowrap">{getRelativeTime(reply.createdAt)}</span>
                                     </div>
-                                    <p className="text-xs text-gray-800 leading-relaxed">{reply.content}</p>
+                                    <p className="text-[10px] sm:text-xs text-gray-800 leading-relaxed break-words">{reply.content}</p>
                                   </div>
-                                  <div className="flex items-center gap-3 mt-1">
+                                  <div className="flex items-center gap-2 sm:gap-3 mt-1">
                                     <button
                                       onClick={() => handleCommentInteraction(reply.id, 'like', true, comment.id)}
-                                      className="flex items-center gap-1 text-[10px] font-medium text-gray-600 hover:text-green-600 transition-colors"
+                                      className="flex items-center gap-0.5 sm:gap-1 text-[9px] sm:text-[10px] font-medium text-gray-600 hover:text-green-600 transition-colors"
+                                      aria-label="Like reply"
                                     >
-                                      <ThumbsUp className="h-3 w-3" />
+                                      <ThumbsUp className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
                                       <span>{reply.likes || 0}</span>
                                     </button>
                                     <button
                                       onClick={() => handleCommentInteraction(reply.id, 'dislike', true, comment.id)}
-                                      className="flex items-center gap-1 text-[10px] font-medium text-gray-600 hover:text-red-600 transition-colors"
+                                      className="flex items-center gap-0.5 sm:gap-1 text-[9px] sm:text-[10px] font-medium text-gray-600 hover:text-red-600 transition-colors"
+                                      aria-label="Dislike reply"
                                     >
-                                      <ThumbsDown className="h-3 w-3" />
+                                      <ThumbsDown className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
                                       <span>{reply.dislikes || 0}</span>
                                     </button>
                                   </div>
